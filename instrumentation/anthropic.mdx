@@ -1,0 +1,96 @@
+---
+title: "Anthropic"
+description: "OpenTelemetry instrumentation for the Anthropic Python SDK."
+---
+
+<Warning>
+This package implements GenAI semantic conventions that are currently in **development** status. The API surface, span attributes, and metric names may change in future releases as the conventions evolve.
+</Warning>
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-anthropic
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` CLI to instrument without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+Call `AnthropicInstrumentor().instrument()` before creating any Anthropic clients. All `messages.create` calls (sync and async) are automatically traced.
+
+```python
+import anthropic
+from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+
+AnthropicInstrumentor().instrument()
+
+client = anthropic.Anthropic()
+response = client.messages.create(
+    model="claude-3-5-sonnet-20241022",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Hello, Claude!"}
+    ],
+)
+print(response.content[0].text)
+```
+
+To stop instrumentation:
+
+```python
+AnthropicInstrumentor().uninstrument()
+```
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Custom `MeterProvider` to use. Defaults to the global meter provider.
+</ParamField>
+
+<ParamField path="logger_provider" type="LoggerProvider">
+  Custom `LoggerProvider` for emitting log events (prompts and completions). Defaults to the global logger provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | Set to `true` to capture prompt and completion content as span or event attributes. Content is **not captured by default** to avoid recording sensitive data. |
+
+**Enabling message content capture:**
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+## Spans produced
+
+`AnthropicInstrumentor` creates one span per `messages.create` call.
+
+| Attribute | Description |
+|---|---|
+| `gen_ai.system` | Always `"anthropic"` |
+| `gen_ai.operation.name` | Operation type, e.g., `"chat"` |
+| `gen_ai.request.model` | Model name requested (e.g., `"claude-3-5-sonnet-20241022"`) |
+| `gen_ai.response.model` | Model name returned in the response |
+| `gen_ai.usage.input_tokens` | Number of prompt tokens consumed |
+| `gen_ai.usage.output_tokens` | Number of completion tokens produced |
+| `server.address` | Anthropic API hostname |
+| `server.port` | Anthropic API port |
+
+## Supported versions
+
+Requires `anthropic >= 0.16.0`.

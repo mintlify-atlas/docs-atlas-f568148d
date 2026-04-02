@@ -1,0 +1,81 @@
+---
+title: "Introduction"
+description: "OpenTelemetry Python Contrib provides 50+ auto-instrumentation packages for web frameworks, databases, messaging, HTTP clients, and GenAI."
+---
+
+## What is OpenTelemetry Python Contrib?
+
+OpenTelemetry Python Contrib is the companion repository to [opentelemetry-python](https://github.com/open-telemetry/opentelemetry-python) (the core SDK and API). It hosts the auto-instrumentation libraries that add observability to popular Python packages — without requiring you to modify your application code.
+
+Each instrumentation package targets a specific library (Flask, Django, SQLAlchemy, Redis, and so on) and produces traces, metrics, and logs that conform to OpenTelemetry semantic conventions. The packages depend only on `opentelemetry-api`, leaving the choice of SDK and exporter to you.
+
+<Warning>
+  All instrumentation packages in this repository are currently in **beta** and should not generally be used in production environments without testing.
+</Warning>
+
+## What it provides
+
+The [`instrumentation/`](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation) directory contains packages across five broad categories:
+
+- **Web frameworks** — Flask, Django, FastAPI, Starlette, Tornado, Falcon, Pyramid, ASGI, WSGI, aiohttp
+- **Databases** — SQLAlchemy, Redis, PyMongo, Elasticsearch, psycopg, Cassandra, asyncpg, aiopg
+- **Messaging** — Celery, Kafka, RabbitMQ (pika), aio-pika, aiokafka
+- **HTTP clients** — requests, httpx, aiohttp-client, gRPC, botocore, AWS Lambda
+- **GenAI** — OpenAI, Vertex AI, and more
+
+Install any package individually:
+
+```bash
+pip install opentelemetry-instrumentation-{integration}
+```
+
+## Two usage modes
+
+### Zero-code instrumentation
+
+The `opentelemetry-instrument` CLI wraps your program and applies instrumentation automatically at startup. No source changes required:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+This is powered by the `opentelemetry-distro` package, which also provides the default SDK configuration. See the [auto-instrumentation](/auto-instrumentation) page for full CLI documentation.
+
+### Programmatic instrumentation
+
+Each library ships an `Instrumentor` class that you can call directly. This gives you precise control over which libraries are instrumented and when:
+
+```python
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+
+FlaskInstrumentor().instrument_app(app)
+```
+
+You can also mix both approaches — use the CLI for zero-code coverage and call individual instrumentors to customize specific libraries.
+
+## Stability
+
+Packages follow a path from beta to `1.0` stable. A package reaches `1.0` when it has:
+
+- A designated CODEOWNER
+- Unit tests covering all supported library versions
+- Clear documentation for any non-obvious usage
+
+Check the [instrumentation README](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/instrumentation/README.md) for the current semantic convention status (`development`, `stable`, or `migration`) of each package.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from zero to running instrumented code in three steps.
+  </Card>
+  <Card title="Auto-instrumentation" icon="terminal" href="/auto-instrumentation">
+    Full reference for the `opentelemetry-instrument` CLI and `opentelemetry-bootstrap`.
+  </Card>
+  <Card title="Web framework guides" icon="globe" href="/guides/web-frameworks">
+    Instrument Flask, Django, FastAPI, and other web frameworks.
+  </Card>
+  <Card title="Flask instrumentation" icon="code" href="/instrumentation/flask">
+    Detailed reference for `opentelemetry-instrumentation-flask`.
+  </Card>
+</CardGroup>

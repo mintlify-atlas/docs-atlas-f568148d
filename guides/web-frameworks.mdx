@@ -1,0 +1,176 @@
+---
+title: "Web Framework Instrumentation"
+description: "Automatically instrument Flask, Django, FastAPI, and other Python web frameworks with OpenTelemetry."
+---
+
+OpenTelemetry Python Contrib provides instrumentation packages for the most widely used Python web frameworks. Each package traces incoming HTTP requests, capturing span attributes such as HTTP method, URL, route, and status code.
+
+## Supported Frameworks
+
+<CardGroup cols={2}>
+  <Card title="Flask" href="/instrumentation/flask">
+    `opentelemetry-instrumentation-flask`
+    Supports: `flask >= 1.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="Django" href="/instrumentation/django">
+    `opentelemetry-instrumentation-django`
+    Supports: `django >= 2.0` | Metrics: Yes | Semconv: development
+  </Card>
+  <Card title="FastAPI" href="/instrumentation/fastapi">
+    `opentelemetry-instrumentation-fastapi`
+    Supports: `fastapi ~= 0.92` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="Starlette" href="/instrumentation/starlette">
+    `opentelemetry-instrumentation-starlette`
+    Supports: `starlette >= 0.13` | Metrics: Yes | Semconv: development
+  </Card>
+  <Card title="Tornado" href="/instrumentation/tornado">
+    `opentelemetry-instrumentation-tornado`
+    Supports: `tornado >= 5.1.1` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="Falcon" href="/instrumentation/falcon">
+    `opentelemetry-instrumentation-falcon`
+    Supports: `falcon >= 1.4.1, < 5.0.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="Pyramid" href="/instrumentation/pyramid">
+    `opentelemetry-instrumentation-pyramid`
+    Supports: `pyramid >= 1.7` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="aiohttp" href="/instrumentation/aiohttp">
+    `opentelemetry-instrumentation-aiohttp-client` / `aiohttp-server`
+    Supports: `aiohttp ~= 3.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="ASGI" href="/instrumentation/asgi">
+    `opentelemetry-instrumentation-asgi`
+    Supports: `asgiref ~= 3.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="WSGI" href="/instrumentation/wsgi">
+    `opentelemetry-instrumentation-wsgi`
+    Supports: `wsgi` | Metrics: Yes | Semconv: migration
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Tabs>
+  <Tab title="Flask">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-flask
+        ```
+      </Step>
+      <Step title="Instrument your application">
+        Flask instrumentation builds on the OpenTelemetry WSGI middleware and patches the Flask application at startup.
+
+        ```python
+        from opentelemetry.instrumentation.flask import FlaskInstrumentor
+        from flask import Flask
+
+        app = Flask(__name__)
+        FlaskInstrumentor().instrument_app(app)
+
+        @app.route("/")
+        def index():
+            return "Hello, World!"
+        ```
+
+        Alternatively, use the global instrumentor before creating the app:
+
+        ```python
+        from opentelemetry.instrumentation.flask import FlaskInstrumentor
+
+        FlaskInstrumentor().instrument()
+
+        from flask import Flask
+        app = Flask(__name__)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="FastAPI">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-fastapi
+        ```
+      </Step>
+      <Step title="Instrument your application">
+        FastAPI instrumentation wraps the ASGI application and traces all incoming HTTP requests automatically.
+
+        ```python
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        FastAPIInstrumentor.instrument_app(app)
+
+        @app.get("/")
+        async def root():
+            return {"message": "Hello, World!"}
+        ```
+
+        You can also use auto-instrumentation via the `opentelemetry-instrument` CLI:
+
+        ```bash
+        opentelemetry-instrument uvicorn main:app
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Django">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-django
+        ```
+      </Step>
+      <Step title="Instrument your application">
+        Django instrumentation traces all requests routed through Django's middleware stack.
+
+        ```python
+        from opentelemetry.instrumentation.django import DjangoInstrumentor
+
+        DjangoInstrumentor().instrument()
+        ```
+
+        Place this call in your `manage.py` or `wsgi.py` / `asgi.py` entry point, before the Django application is loaded. Auto-instrumentation is also supported via the `opentelemetry-instrument` CLI.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## ASGI and WSGI Middleware
+
+FastAPI, Starlette, and other ASGI frameworks are instrumented through `opentelemetry-instrumentation-asgi`, which provides an `OpenTelemetryMiddleware` compatible with any ASGI application. Similarly, Flask, Django (in WSGI mode), Pyramid, and Falcon are instrumented through `opentelemetry-instrumentation-wsgi`.
+
+Framework-specific packages (e.g. `opentelemetry-instrumentation-fastapi`) layer additional logic on top of the underlying ASGI/WSGI middleware — for example, extracting route templates for cleaner span names. You can use the ASGI/WSGI middleware packages directly if your framework is not listed above:
+
+```python
+# Generic ASGI middleware
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+app = OpenTelemetryMiddleware(your_asgi_app)
+```
+
+```python
+# Generic WSGI middleware
+from opentelemetry.instrumentation.wsgi import OpenTelemetryMiddleware
+
+app = OpenTelemetryMiddleware(your_wsgi_app)
+```
+
+## Reference Pages
+
+| Framework | Reference |
+|-----------|-----------|
+| Flask | [/instrumentation/flask](/instrumentation/flask) |
+| Django | [/instrumentation/django](/instrumentation/django) |
+| FastAPI | [/instrumentation/fastapi](/instrumentation/fastapi) |
+| Starlette | [/instrumentation/starlette](/instrumentation/starlette) |
+| Tornado | [/instrumentation/tornado](/instrumentation/tornado) |
+| Falcon | [/instrumentation/falcon](/instrumentation/falcon) |
+| Pyramid | [/instrumentation/pyramid](/instrumentation/pyramid) |
+| aiohttp | [/instrumentation/aiohttp](/instrumentation/aiohttp) |
+| ASGI | [/instrumentation/asgi](/instrumentation/asgi) |
+| WSGI | [/instrumentation/wsgi](/instrumentation/wsgi) |

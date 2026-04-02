@@ -1,0 +1,170 @@
+---
+title: "HTTP Client Instrumentation"
+description: "Automatically instrument outgoing HTTP requests made by requests, httpx, urllib, and other Python HTTP clients with OpenTelemetry."
+---
+
+OpenTelemetry Python Contrib provides instrumentation for the most common HTTP client libraries. Each package traces outgoing HTTP requests and propagates trace context to downstream services via standard W3C TraceContext headers.
+
+## Supported Clients
+
+<CardGroup cols={2}>
+  <Card title="requests" href="/instrumentation/requests">
+    `opentelemetry-instrumentation-requests`
+    Supports: `requests ~= 2.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="httpx" href="/instrumentation/httpx">
+    `opentelemetry-instrumentation-httpx`
+    Supports: `httpx >= 0.18.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="urllib / urllib3" href="/instrumentation/requests">
+    `opentelemetry-instrumentation-urllib`, `urllib3`
+    stdlib urllib and urllib3 >= 1.0.0 | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="aiohttp Client" href="/instrumentation/aiohttp">
+    `opentelemetry-instrumentation-aiohttp-client`
+    Supports: `aiohttp ~= 3.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="gRPC" href="/instrumentation/grpc">
+    `opentelemetry-instrumentation-grpc`
+    Supports: `grpcio >= 1.42.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="botocore" href="/instrumentation/botocore">
+    `opentelemetry-instrumentation-botocore`
+    Supports: `botocore ~= 1.0`, `aiobotocore ~= 2.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="AWS Lambda" href="/instrumentation/aws-lambda">
+    `opentelemetry-instrumentation-aws-lambda`
+    Supports: AWS Lambda runtime | Metrics: No | Semconv: development
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Tabs>
+  <Tab title="requests">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-requests
+        ```
+      </Step>
+      <Step title="Instrument all requests sessions">
+        `RequestsInstrumentor` patches the `requests` library globally. All `Session` instances and top-level convenience functions (`requests.get`, `requests.post`, etc.) will be traced.
+
+        ```python
+        import requests
+        from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+        RequestsInstrumentor().instrument()
+
+        response = requests.get("https://httpbin.org/get")
+        print(response.status_code)
+        ```
+      </Step>
+      <Step title="Optional: exclude specific URLs">
+        Set the `OTEL_PYTHON_REQUESTS_EXCLUDED_URLS` environment variable (or `OTEL_PYTHON_EXCLUDED_URLS` as a fallback) to a comma-delimited list of regular expressions matching URLs to skip:
+
+        ```bash
+        export OTEL_PYTHON_REQUESTS_EXCLUDED_URLS="client/.*/info,healthcheck"
+        ```
+
+        This would exclude URLs such as `https://site/client/123/info` and `https://site/xyz/healthcheck`.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="httpx">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-httpx
+        ```
+      </Step>
+      <Step title="Instrument all httpx clients">
+        `HTTPXClientInstrumentor` patches both synchronous and asynchronous `httpx` clients globally.
+
+        ```python
+        import httpx
+        import asyncio
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument()
+
+        # Synchronous
+        with httpx.Client() as client:
+            response = client.get("https://httpbin.org/get")
+            print(response.status_code)
+
+        # Asynchronous
+        async def fetch(url):
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url)
+                return response.status_code
+
+        asyncio.run(fetch("https://httpbin.org/get"))
+        ```
+      </Step>
+      <Step title="Optional: instrument a single client">
+        If you only want to trace requests from a specific client instance:
+
+        ```python
+        import httpx
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        with httpx.Client() as client:
+            HTTPXClientInstrumentor.instrument_client(client)
+            response = client.get("https://httpbin.org/get")
+        ```
+      </Step>
+      <Step title="Optional: add request/response hooks">
+        Hooks let you customise spans right after they are created or right before they are finished:
+
+        ```python
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        def request_hook(span, request):
+            span.set_attribute("custom.request_id", request.headers.get("x-request-id", ""))
+
+        def response_hook(span, request, response):
+            status_code, headers, stream, extensions = response
+            span.set_attribute("custom.response_size", headers.get("content-length", ""))
+
+        HTTPXClientInstrumentor().instrument(
+            request_hook=request_hook,
+            response_hook=response_hook,
+        )
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## HTTP Span Attributes
+
+Spans produced by HTTP client instrumentation follow the [OpenTelemetry HTTP Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/http/). Common attributes include:
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `http.request.method` | HTTP method | `GET`, `POST` |
+| `url.full` | Full request URL | `https://api.example.com/users` |
+| `http.response.status_code` | Response status code | `200`, `404` |
+| `server.address` | Target hostname | `api.example.com` |
+| `server.port` | Target port | `443` |
+| `network.protocol.version` | HTTP version | `1.1`, `2` |
+
+Trace context is automatically injected into outgoing request headers as `traceparent` (and `tracestate` where applicable), enabling end-to-end distributed tracing across service boundaries.
+
+<Tip>
+  If you use both `requests` and `httpx` in the same application, instrument both libraries independently — each instrumentor only patches its own library.
+</Tip>
+
+## Reference Pages
+
+| Client | Reference |
+|--------|-----------|
+| requests | [/instrumentation/requests](/instrumentation/requests) |
+| httpx | [/instrumentation/httpx](/instrumentation/httpx) |
+| urllib / urllib3 | [/instrumentation/requests](/instrumentation/requests) |
+| aiohttp | [/instrumentation/aiohttp](/instrumentation/aiohttp) |
+| gRPC | [/instrumentation/grpc](/instrumentation/grpc) |
+| botocore | [/instrumentation/botocore](/instrumentation/botocore) |
+| AWS Lambda | [/instrumentation/aws-lambda](/instrumentation/aws-lambda) |

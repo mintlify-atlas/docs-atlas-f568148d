@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "OpenTelemetry Python Contrib",
+  "projectType": "sdk-library",
+  "projectName": "OpenTelemetry Python Contrib",
+  "projectDescription": "A collection of auto-instrumentation packages and contrib extensions for adding OpenTelemetry observability (traces, metrics, logs) to Python applications and popular frameworks.",
   "theme": "palm",
-  "colors": {
-    "primary": "#f4ab04",
-    "light": "#f2e0c2",
-    "dark": "#4f60ad"
-  },
-  "favicon": "https://media.brand.dev/b22e27da-51fe-471c-a598-ac7f39a57600.png",
-  "logo": {
-    "light": "https://media.brand.dev/2fa4b101-e251-40cf-964d-3ce05577d783.svg",
-    "dark": "https://media.brand.dev/2fa4b101-e251-40cf-964d-3ce05577d783.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/open-telemetry/opentelemetry-python-contrib"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/open-telemetry/opentelemetry-python-contrib"
-    }
-  },
+  "primaryColor": "#f4ab04",
+  "lightColor": "#f2e0c2",
+  "darkColor": "#4f60ad",
   "navigation": {
     "tabs": [
       {
@@ -130,5 +113,35 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "50+ auto-instrumentation packages for popular Python libraries and frameworks",
+    "Zero-code auto-instrumentation via opentelemetry-instrument CLI command",
+    "Distributed tracing, metrics, and logging support",
+    "GenAI instrumentation for OpenAI, Anthropic, LangChain, and Vertex AI",
+    "Semantic convention compliance with migration support",
+    "Extensible BaseInstrumentor ABC for building custom instrumentations",
+    "AWS Lambda, Botocore, and cloud provider integration",
+    "Custom distro and configurator support"
+  ],
+  "publicApiSurface": [
+    "BaseInstrumentor.instrument(**kwargs)",
+    "BaseInstrumentor.uninstrument(**kwargs)",
+    "BaseInstrumentor.instrumentation_dependencies() -> Collection[str]",
+    "opentelemetry-instrument CLI command",
+    "opentelemetry-bootstrap CLI command",
+    "auto_instrumentation.initialize()",
+    "opentelemetry-instrumentation-flask.FlaskInstrumentor",
+    "opentelemetry-instrumentation-django.DjangoInstrumentor",
+    "opentelemetry-instrumentation-fastapi.FastAPIInstrumentor",
+    "opentelemetry-instrumentation-requests.RequestsInstrumentor",
+    "opentelemetry-instrumentation-sqlalchemy.SQLAlchemyInstrumentor",
+    "opentelemetry-instrumentation-redis.RedisInstrumentor",
+    "opentelemetry-instrumentation-celery.CeleryInstrumentor",
+    "opentelemetry-instrumentation-grpc.GrpcInstrumentorClient / GrpcInstrumentorServer",
+    "opentelemetry-instrumentation-botocore.BotocoreInstrumentor",
+    "opentelemetry-instrumentation-openai-v2.OpenAIInstrumentor",
+    "opentelemetry-propagator-aws-xray.AwsXRayPropagator",
+    "opentelemetry-distro.OpenTelemetryDistro"
+  ]
 }

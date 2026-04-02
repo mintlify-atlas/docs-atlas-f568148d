@@ -1,0 +1,89 @@
+---
+title: "Propagators"
+description: "Configure context propagation with AWS X-Ray and OpenTracing propagators."
+---
+
+Propagators inject and extract trace context into/from carrier objects (HTTP headers, message metadata, etc.), enabling distributed traces to span across service boundaries. This repo provides two additional propagators beyond the defaults in `opentelemetry-python` core.
+
+## Default propagators
+
+The default propagation format is **W3C TraceContext** (`traceparent`/`tracestate` headers) plus **W3C Baggage**, configured via:
+
+```bash
+OTEL_PROPAGATORS=tracecontext,baggage
+```
+
+## AWS X-Ray propagator
+
+Enables interoperability with AWS services that use the X-Ray trace header format (`X-Amzn-Trace-Id`).
+
+### Installation
+
+```bash
+pip install opentelemetry-propagator-aws-xray
+```
+
+### Usage
+
+<Tabs>
+  <Tab title="Environment variable">
+    ```bash
+    OTEL_PROPAGATORS=aws_xray opentelemetry-instrument python app.py
+    ```
+  </Tab>
+  <Tab title="Programmatic">
+    ```python
+    from opentelemetry.propagate import set_global_textmap
+    from opentelemetry.propagators.aws import AwsXRayPropagator
+
+    set_global_textmap(AwsXRayPropagator())
+    ```
+  </Tab>
+</Tabs>
+
+### Combining with W3C TraceContext
+
+```bash
+OTEL_PROPAGATORS=tracecontext,baggage,aws_xray opentelemetry-instrument python app.py
+```
+
+<Note>
+When using the AWS X-Ray propagator together with AWS Lambda instrumentation, the propagator is required for the Lambda instrumentor to correctly link spans to the upstream X-Ray trace.
+</Note>
+
+## OpenTracing (OT Trace) propagator
+
+Enables interoperability with systems using the legacy OpenTracing `ot-tracer-*` header format.
+
+### Installation
+
+```bash
+pip install opentelemetry-propagator-ot-trace
+```
+
+### Usage
+
+<Tabs>
+  <Tab title="Environment variable">
+    ```bash
+    OTEL_PROPAGATORS=ot_trace opentelemetry-instrument python app.py
+    ```
+  </Tab>
+  <Tab title="Programmatic">
+    ```python
+    from opentelemetry.propagate import set_global_textmap
+    from opentelemetry.propagators.ot_trace import OTTracePropagator
+
+    set_global_textmap(OTTracePropagator())
+    ```
+  </Tab>
+</Tabs>
+
+## Combining multiple propagators
+
+Set `OTEL_PROPAGATORS` to a comma-separated list. Propagators are tried in order for extraction:
+
+```bash
+# Support W3C TraceContext, Baggage, and legacy OpenTracing simultaneously
+OTEL_PROPAGATORS=tracecontext,baggage,ot_trace opentelemetry-instrument python app.py
+```

@@ -1,0 +1,108 @@
+---
+title: "Celery"
+description: "OpenTelemetry instrumentation for Celery."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-celery
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument celery worker --app=myapp
+```
+
+### Manual instrumentation
+
+Celery spawns worker processes after the main process starts. Tracing components (such as the
+`BatchSpanProcessor`) that depend on background threads must be initialized inside the worker
+process. Use Celery's `worker_process_init` signal for this:
+
+```python
+from opentelemetry.instrumentation.celery import CeleryInstrumentor
+from celery import Celery
+from celery.signals import worker_process_init
+
+@worker_process_init.connect(weak=False)
+def init_celery_tracing(*args, **kwargs):
+    CeleryInstrumentor().instrument()
+
+app = Celery("tasks", broker="amqp://localhost")
+
+@app.task
+def add(x, y):
+    return x + y
+
+add.delay(42, 50)
+```
+
+<Warning>
+  Do not call `CeleryInstrumentor().instrument()` at module level before worker processes are
+  forked. Tracing infrastructure initialized in the parent process may not survive the fork
+  correctly, causing dropped spans or deadlocks.
+</Warning>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  The `MeterProvider` to use. Defaults to the global provider.
+</ParamField>
+
+## Spans produced
+
+`CeleryInstrumentor` hooks into Celery's signal system and produces two kinds of spans per
+task invocation.
+
+### Producer span — `apply_async/<task_name>`
+
+Created by `before_task_publish` / `after_task_publish` signals when a task is dispatched.
+Kind: `PRODUCER`.
+
+| Attribute | Description |
+|-----------|-------------|
+| `celery.action` | Always `apply_async` |
+| `celery.task_name` | Fully-qualified task name (e.g., `myapp.tasks.add`) |
+| `messaging.message_id` | The Celery task UUID |
+| `messaging.destination` | The routing key / queue name |
+| `messaging.conversation_id` | The correlation ID |
+
+### Consumer span — `run/<task_name>`
+
+Created by `task_prerun` / `task_postrun` signals when a worker executes the task.
+Kind: `CONSUMER`. The span name uses the task's fully-qualified name as its suffix
+(e.g., `run/myapp.tasks.add`), making the task name directly visible in trace UIs.
+
+| Attribute | Description |
+|-----------|-------------|
+| `celery.action` | Always `run` |
+| `celery.task_name` | Fully-qualified task name |
+| `messaging.message_id` | The Celery task UUID |
+| `celery.retries` | Retry count (if retried) |
+| `celery.retry.reason` | Reason for retry (if applicable) |
+| `celery.routing_key` | Routing key |
+| `celery.hostname` | Worker hostname |
+| `celery.eta` | Scheduled ETA (if set) |
+
+Context propagation is injected into the task headers when dispatched and extracted on the
+worker side, linking producer and consumer spans into the same trace.
+
+### Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `flower.task.runtime.seconds` | Histogram | Time taken to execute each task, labelled by `task` name and `worker` hostname. |
+
+## Supported versions
+
+`celery >= 4.0, < 6.0`

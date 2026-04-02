@@ -1,0 +1,115 @@
+---
+title: "Elasticsearch"
+description: "OpenTelemetry instrumentation for the Elasticsearch Python client."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-elasticsearch
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+```python
+import elasticsearch
+from opentelemetry.instrumentation.elasticsearch import ElasticsearchInstrumentor
+
+ElasticsearchInstrumentor().instrument()
+
+es = elasticsearch.Elasticsearch()
+es.index(index="my-index", id=1, document={"field": "value"})
+es.get(index="my-index", id=1)
+```
+
+**Custom span name prefix:**
+
+By default spans are named `Elasticsearch<url>`. Pass a custom prefix at construction time or
+via the `OTEL_PYTHON_ELASTICSEARCH_NAME_PREFIX` environment variable:
+
+```python
+ElasticsearchInstrumentor("MyService").instrument()
+```
+
+<Warning>
+  Since Elasticsearch 8.13 the Python client ships with built-in OpenTelemetry support. If
+  the native OTel integration is active on a client, this instrumentation disables itself
+  automatically to avoid duplicate spans. The two implementations may use different semantic
+  conventions.
+</Warning>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, method, url, kwargs], None]">
+  Called before each request. Signature: `def request_hook(span, method, url, kwargs)`.
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, response], None]">
+  Called after each successful request. Signature: `def response_hook(span, response)`.
+</ParamField>
+
+**Constructor parameter:**
+
+<ParamField path="span_name_prefix" type="string" default="Elasticsearch">
+  String prepended to every span name. Can also be set via the
+  `OTEL_PYTHON_ELASTICSEARCH_NAME_PREFIX` environment variable.
+</ParamField>
+
+### Example with hooks
+
+```python
+from opentelemetry.instrumentation.elasticsearch import ElasticsearchInstrumentor
+
+def request_hook(span, method, url, kwargs):
+    if span and span.is_recording():
+        span.set_attribute("http.method", method)
+
+def response_hook(span, response):
+    if span and span.is_recording() and isinstance(response, dict):
+        span.set_attribute("es.hits.total", response.get("hits", {}).get("total", {}).get("value"))
+
+ElasticsearchInstrumentor().instrument(
+    request_hook=request_hook,
+    response_hook=response_hook,
+)
+```
+
+## Spans produced
+
+One span is created per `Transport.perform_request` call. The span name is
+`<prefix><url>` with document IDs normalized (e.g., `Elasticsearch/my-index/_doc/:id`)
+and search URLs simplified (e.g., `Elasticsearch/<target>/_search`).
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Always `elasticsearch` |
+| `db.statement` | The sanitized request body (dict requests only; omitted for bulk) |
+| `elasticsearch.url` | The request URL path |
+| `elasticsearch.method` | The HTTP method (e.g., `GET`, `POST`) |
+| `elasticsearch.params` | Query string parameters |
+| `elasticsearch.id` | Document ID extracted from the URL |
+| `elasticsearch.target` | Search target index extracted from the URL |
+| `elasticsearch.found` | Value of the `found` field in the response body |
+| `elasticsearch.timed_out` | Value of the `timed_out` field in the response body |
+| `elasticsearch.took` | Value of the `took` field in the response body |
+
+## Supported versions
+
+`elasticsearch >= 6.0`
+
+The instrumentation handles both the pre-8.x API (where transport is part of `elasticsearch`)
+and the 8.x+ split where transport is provided by `elastic-transport`.

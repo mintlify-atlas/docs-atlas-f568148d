@@ -1,0 +1,193 @@
+---
+title: "aiohttp"
+description: "OpenTelemetry instrumentation for aiohttp — traces HTTP client requests and server requests automatically."
+---
+
+Two separate packages instrument aiohttp: one for the HTTP client (`aiohttp.ClientSession`) and one for the HTTP server (`aiohttp.web.Application`). Both require `aiohttp ~= 3.0`.
+
+<Tabs>
+  <Tab title="Client">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-aiohttp-client
+```
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles this automatically.
+
+### Manual instrumentation
+
+<Tabs>
+  <Tab title="Instrument all sessions">
+    ```python
+    import asyncio
+    import aiohttp
+    from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+
+    AioHttpClientInstrumentor().instrument()
+
+    async def get(url):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                return await response.text()
+
+    asyncio.run(get("https://example.com"))
+    ```
+  </Tab>
+  <Tab title="Single session via trace config">
+    ```python
+    import asyncio
+    import aiohttp
+    from opentelemetry.instrumentation.aiohttp_client import create_trace_config
+
+    async def get(url):
+        async with aiohttp.ClientSession(
+            trace_configs=[create_trace_config()]
+        ) as session:
+            async with session.get(url) as response:
+                return await response.text()
+
+    asyncio.run(get("https://example.com"))
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+<ParamField path="request_hook" type="callable">
+  Called right after a client span is created. Receives `(span, params)` where `params` is `aiohttp.TraceRequestStartParams`.
+</ParamField>
+
+<ParamField path="response_hook" type="callable">
+  Called right before the span is finished. Receives `(span, params)` where `params` is `aiohttp.TraceRequestEndParams` or `aiohttp.TraceRequestExceptionParams`.
+</ParamField>
+
+<ParamField path="url_filter" type="callable">
+  A callback to transform the request URL before it is stored as a span attribute. Useful for stripping sensitive query parameters. Receives a `yarl.URL` and returns a `str`.
+</ParamField>
+
+<ParamField path="trace_configs" type="aiohttp.TraceConfig[]">
+  Additional `aiohttp.TraceConfig` objects to attach to every instrumented `ClientSession`.
+</ParamField>
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Optional meter provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_AIOHTTP_CLIENT_EXCLUDED_URLS` | Comma-delimited URL regex exclusion list. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+### URL filter example
+
+```python
+import yarl
+from opentelemetry.instrumentation.aiohttp_client import AioHttpClientInstrumentor
+
+def strip_query_params(url: yarl.URL) -> str:
+    return str(url.with_query(None))
+
+AioHttpClientInstrumentor().instrument(url_filter=strip_query_params)
+```
+
+## Spans produced
+
+A single client span with kind `CLIENT` is created per outgoing HTTP request. The span name is the sanitized HTTP method (e.g. `GET`). Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.url` / `url.full`
+- `http.status_code` / `http.response.status_code`
+- `net.peer.name` / `server.address`
+- `net.peer.port` / `server.port`
+
+## Supported versions (client)
+
+Requires `aiohttp ~= 3.0`.
+
+  </Tab>
+  <Tab title="Server">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-aiohttp-server
+```
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles this automatically.
+
+### Manual instrumentation
+
+```python
+from aiohttp import web
+from opentelemetry.instrumentation.aiohttp_server import AioHttpServerInstrumentor
+
+AioHttpServerInstrumentor().instrument()
+
+async def hello(request):
+    return web.Response(text="Hello, world")
+
+app = web.Application()
+app.add_routes([web.get("/", hello)])
+
+web.run_app(app)
+```
+
+<Note>
+  `AioHttpServerInstrumentor().instrument()` patches `aiohttp.web.Application` so that all subsequently created application instances automatically include the tracing middleware.
+</Note>
+
+## Configuration
+
+`AioHttpServerInstrumentor().instrument()` accepts the following keyword arguments:
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_AIOHTTP_SERVER_EXCLUDED_URLS` | Comma-delimited URL regex exclusion list. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+## Spans produced
+
+A single server span with kind `SERVER` is created per incoming HTTP request. The span name is the request path. Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.route` (set to the matched handler function name)
+- `http.status_code` / `http.response.status_code`
+- `http.scheme`
+- `http.host`
+- `http.target`
+- `http.url`
+- `http.user_agent`
+- `http.flavor`
+
+## Supported versions (server)
+
+Requires `aiohttp ~= 3.0`.
+
+  </Tab>
+</Tabs>

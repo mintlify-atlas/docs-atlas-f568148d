@@ -1,0 +1,140 @@
+---
+title: 'Environment variables'
+description: 'Complete reference for OTEL_ environment variables used to configure OpenTelemetry Python auto-instrumentation.'
+keywords: ['environment variables', 'configuration', 'otel', 'opentelemetry', 'auto-instrumentation']
+---
+
+OpenTelemetry Python auto-instrumentation is configured through environment variables. The variables below can be set before running your application with `opentelemetry-instrument` or programmatically via `auto_instrumentation.initialize()`.
+
+## Exporter config
+
+These variables control which exporters are used for each telemetry signal.
+
+<ParamField query="OTEL_TRACES_EXPORTER" type="string" default="otlp">
+  Comma-separated list of trace exporter names to use. Set to `none` to disable automatic tracer initialization.
+
+  ```bash
+  OTEL_TRACES_EXPORTER=otlp python app.py
+  # Multiple exporters
+  OTEL_TRACES_EXPORTER=zipkin_json,otlp python app.py
+  # Disable tracing
+  OTEL_TRACES_EXPORTER=none python app.py
+  ```
+
+  See [Exporters](/configuration/exporters) for the full list of valid exporter names.
+</ParamField>
+
+<ParamField query="OTEL_METRICS_EXPORTER" type="string" default="otlp">
+  Comma-separated list of metrics exporter names to use. Set to `none` to disable automatic meter initialization.
+
+  ```bash
+  OTEL_METRICS_EXPORTER=prometheus python app.py
+  ```
+
+  Valid values: `otlp`, `prometheus`, `none`.
+</ParamField>
+
+<ParamField query="OTEL_LOGS_EXPORTER" type="string" default="otlp">
+  Comma-separated list of logs exporter names to use. Set to `none` to disable automatic log provider initialization.
+
+  ```bash
+  OTEL_LOGS_EXPORTER=console python app.py
+  ```
+
+  Valid values: `otlp`, `console`, `none`.
+</ParamField>
+
+## Auto-instrumentation
+
+These variables control the behavior of `opentelemetry-instrument` and the auto-instrumentation loader.
+
+<ParamField query="OTEL_PYTHON_DISABLED_INSTRUMENTATIONS" type="string">
+  Comma-separated list of instrumentation entry point names to skip when auto-instrumenting. Spaces around commas are trimmed automatically.
+
+  Set to `*` to disable all instrumentations entirely.
+
+  ```bash
+  # Skip requests and django instrumentation
+  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS="requests,django" python app.py
+
+  # Disable all auto-instrumentation
+  OTEL_PYTHON_DISABLED_INSTRUMENTATIONS="*" python app.py
+  ```
+</ParamField>
+
+<ParamField query="OTEL_PYTHON_DISTRO" type="string">
+  Entry point name of the distro to use when multiple `opentelemetry_distro` entry points are installed in the environment. If not set, the first discovered distro is used.
+
+  ```bash
+  OTEL_PYTHON_DISTRO=my_custom_distro python app.py
+  ```
+
+  The name must match the key defined under `[project.entry-points.opentelemetry_distro]` in your package's `pyproject.toml`. See [Custom Distro](/configuration/custom-distro) for details.
+</ParamField>
+
+<ParamField query="OTEL_PYTHON_CONFIGURATOR" type="string">
+  Entry point name of the configurator to use when multiple `opentelemetry_configurator` entry points are installed. If not set, the first discovered configurator is used.
+
+  ```bash
+  OTEL_PYTHON_CONFIGURATOR=my_custom_configurator python app.py
+  ```
+
+  The name must match the key defined under `[project.entry-points.opentelemetry_configurator]` in your package's `pyproject.toml`.
+</ParamField>
+
+<ParamField query="OTEL_PYTHON_ID_GENERATOR" type="string" default="random">
+  Specifies the IDs generator to use for the global Tracer Provider. Can also be set via the `--id-generator` CLI flag on `opentelemetry-instrument`.
+
+  ```bash
+  OTEL_PYTHON_ID_GENERATOR=random opentelemetry-instrument python app.py
+  # Equivalent CLI form
+  opentelemetry-instrument --id_generator random python app.py
+  ```
+</ParamField>
+
+<ParamField query="OTEL_PYTHON_AUTO_INSTRUMENTATION_EXPERIMENTAL_GEVENT_PATCH" type="string">
+  When set to `patch_all`, `opentelemetry-instrument` calls gevent's `patch_all()` monkeypatching method before loading instrumentors. This is required for correct instrumentation of gevent-based applications.
+
+  <Warning>
+    This option is experimental and its behavior may change in future releases.
+  </Warning>
+
+  ```bash
+  OTEL_PYTHON_AUTO_INSTRUMENTATION_EXPERIMENTAL_GEVENT_PATCH=patch_all opentelemetry-instrument python app.py
+  ```
+</ParamField>
+
+## Resource and service
+
+These standard OpenTelemetry variables attach identity and metadata to all telemetry produced by your application.
+
+<ParamField query="OTEL_SERVICE_NAME" type="string">
+  Sets the `service.name` resource attribute on all traces, metrics, and logs emitted by the application. This is the primary way to identify your service in your observability backend.
+
+  ```bash
+  OTEL_SERVICE_NAME=payment-service opentelemetry-instrument python app.py
+  ```
+</ParamField>
+
+<ParamField query="OTEL_RESOURCE_ATTRIBUTES" type="string">
+  Comma-separated list of `key=value` pairs that are added as resource attributes to all telemetry. Use this to attach environment, version, region, or any other metadata.
+
+  ```bash
+  OTEL_RESOURCE_ATTRIBUTES="deployment.environment=production,service.version=1.2.3" \
+    opentelemetry-instrument python app.py
+  ```
+
+  `OTEL_SERVICE_NAME` takes precedence over a `service.name` key set here.
+</ParamField>
+
+## Combining variables
+
+Environment variables can be combined freely. A typical production invocation looks like:
+
+```bash
+OTEL_SERVICE_NAME=my-service \
+OTEL_RESOURCE_ATTRIBUTES="deployment.environment=production,service.version=2.0.0" \
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317 \
+opentelemetry-instrument python app.py
+```

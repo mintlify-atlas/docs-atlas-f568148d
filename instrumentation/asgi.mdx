@@ -1,0 +1,162 @@
+---
+title: "ASGI"
+description: "OpenTelemetry instrumentation for ASGI — traces HTTP requests and responses automatically."
+---
+
+Provides an ASGI middleware (`OpenTelemetryMiddleware`) that can be used with any ASGI framework — such as Django Channels, Quart, or raw ASGI apps — to trace request timing through OpenTelemetry.
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-asgi
+```
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles frameworks built on this middleware (FastAPI, Starlette) automatically.
+
+### Manual instrumentation
+
+Wrap your ASGI application object with `OpenTelemetryMiddleware`.
+
+<Tabs>
+  <Tab title="Raw ASGI">
+    ```python
+    from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+    async def app(scope, receive, send):
+        # your ASGI app
+        ...
+
+    app = OpenTelemetryMiddleware(app)
+    ```
+  </Tab>
+  <Tab title="Quart">
+    ```python
+    from quart import Quart
+    from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+    app = Quart(__name__)
+    app.asgi_app = OpenTelemetryMiddleware(app.asgi_app)
+
+    @app.route("/")
+    async def hello():
+        return "Hello!"
+    ```
+  </Tab>
+  <Tab title="Django ASGI">
+    ```python
+    # asgi.py
+    import os
+    from django.core.asgi import get_asgi_application
+    from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "myproject.settings")
+
+    application = get_asgi_application()
+    application = OpenTelemetryMiddleware(application)
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+`OpenTelemetryMiddleware` accepts the following constructor arguments:
+
+<ParamField path="server_request_hook" type="callable">
+  Called with the server span and the ASGI `scope` dict for every incoming request.
+</ParamField>
+
+<ParamField path="client_request_hook" type="callable">
+  Called with the internal span, ASGI `scope`, and the `receive` event dict when `receive` is invoked.
+</ParamField>
+
+<ParamField path="client_response_hook" type="callable">
+  Called with the internal span, ASGI `scope`, and the `send` event dict when `send` is invoked.
+</ParamField>
+
+<ParamField path="excluded_urls" type="string | ExcludeList">
+  Comma-delimited string of URL regexes to exclude, or a pre-parsed `ExcludeList` object.
+</ParamField>
+
+<ParamField path="default_span_details" type="callable">
+  Callback that receives the ASGI `scope` and returns a `(span_name, attributes)` tuple. Defaults to `get_default_span_details`.
+</ParamField>
+
+<ParamField path="http_capture_headers_server_request" type="string[]">
+  List of request header name regexes to capture as span attributes.
+</ParamField>
+
+<ParamField path="http_capture_headers_server_response" type="string[]">
+  List of response header name regexes to capture as span attributes.
+</ParamField>
+
+<ParamField path="http_capture_headers_sanitize_fields" type="string[]">
+  List of header name regexes whose values should be replaced with `[REDACTED]`.
+</ParamField>
+
+<ParamField path="exclude_spans" type="string[]">
+  Optionally exclude `"receive"` and/or `"send"` child spans. Example: `["receive", "send"]`.
+</ParamField>
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Optional meter provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+### Hooks example
+
+```python
+from opentelemetry.trace import Span
+from asgiref.typing import Scope
+from typing import Any
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+def server_request_hook(span: Span, scope: Scope):
+    if span and span.is_recording():
+        span.set_attribute("custom.attribute", "value")
+
+def client_request_hook(span: Span, scope: Scope, message: dict[str, Any]):
+    if span and span.is_recording():
+        span.set_attribute("asgi.event.type", message.get("type", ""))
+
+def client_response_hook(span: Span, scope: Scope, message: dict[str, Any]):
+    if span and span.is_recording():
+        span.set_attribute("asgi.send.type", message.get("type", ""))
+
+app = OpenTelemetryMiddleware(
+    app,
+    server_request_hook=server_request_hook,
+    client_request_hook=client_request_hook,
+    client_response_hook=client_response_hook,
+)
+```
+
+## Spans produced
+
+A server span with kind `SERVER` is created per HTTP or WebSocket connection. Child spans are created for each `receive` and `send` ASGI event (unless excluded). Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.status_code` / `http.response.status_code`
+- `http.scheme`
+- `http.host`
+- `http.target`
+- `http.user_agent`
+- `asgi.event.type` (on receive/send child spans)
+
+## Supported versions
+
+Requires `asgiref ~= 3.0`.

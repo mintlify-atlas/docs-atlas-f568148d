@@ -1,0 +1,238 @@
+---
+title: "Auto-instrumentation"
+description: "Reference for the opentelemetry-instrument CLI and opentelemetry-bootstrap commands."
+---
+
+The `opentelemetry-instrumentation` package provides two CLI commands that automate setup and execution of instrumented Python programs.
+
+<Note>
+  You must install `opentelemetry-distro` to use auto-instrumentation. The distro package provides the default SDK configuration and the entry points that `opentelemetry-instrument` depends on:
+
+  ```bash
+  pip install "opentelemetry-distro[otlp]"
+  ```
+
+  The `[otlp]` extra installs the OTLP exporter. Omit it if you plan to use a different exporter.
+</Note>
+
+## opentelemetry-bootstrap
+
+`opentelemetry-bootstrap` inspects the active Python environment, identifies installed libraries that have a matching OpenTelemetry instrumentation package, and either prints the list or installs the packages for you.
+
+```bash
+opentelemetry-bootstrap [-a install|requirements]
+```
+
+### Actions
+
+| Flag | Behavior |
+|------|----------|
+| *(no flag)* or `-a requirements` | Prints instrumentation packages to stdout. Pipe to a file or review before installing. |
+| `-a install` | Installs the detected packages using pip into the active environment. |
+
+### Examples
+
+Print what would be installed, without making changes:
+
+```bash
+opentelemetry-bootstrap
+```
+
+Example output when `flask` and `requests` are installed:
+
+```
+opentelemetry-instrumentation-flask==0.62b0
+opentelemetry-instrumentation-requests==0.62b0
+```
+
+Pipe to a requirements file:
+
+```bash
+opentelemetry-bootstrap >> requirements.txt
+```
+
+Install packages directly:
+
+```bash
+opentelemetry-bootstrap -a install
+```
+
+After installing, `opentelemetry-bootstrap` runs `pip check` to verify that the installed instrumentation packages do not introduce dependency conflicts.
+
+---
+
+## opentelemetry-instrument
+
+`opentelemetry-instrument` wraps your Python program and applies auto-instrumentation at startup. It configures a global `TracerProvider` and `MeterProvider`, attaches the configured exporters, and then starts your program.
+
+```bash
+opentelemetry-instrument [flags] python program.py [program args]
+```
+
+<Note>
+  Arguments placed **before** `python` are consumed by `opentelemetry-instrument`. Arguments placed **after** `python program.py` are passed through to your program.
+</Note>
+
+### Flags and environment variables
+
+Every CLI flag corresponds to an `OTEL_` environment variable. The flag is derived by stripping the `OTEL_` or `OTEL_PYTHON_` prefix and lowercasing the result. Flags provided on the command line override the corresponding environment variable.
+
+| CLI flag | Environment variable | Default | Description |
+|----------|---------------------|---------|-------------|
+| `--traces_exporter` | `OTEL_TRACES_EXPORTER` | `otlp` | Comma-separated list of trace exporter names. |
+| `--metrics_exporter` | `OTEL_METRICS_EXPORTER` | `otlp` | Comma-separated list of metrics exporter names. |
+| `--logs_exporter` | `OTEL_LOGS_EXPORTER` | `otlp` | Comma-separated list of log exporter names. |
+| `--distro` | `OTEL_PYTHON_DISTRO` | *(default distro)* | Entry point name of the distro to use. |
+| `--configurator` | `OTEL_PYTHON_CONFIGURATOR` | *(default configurator)* | Entry point name of the configurator to use. |
+| `--id_generator` | `OTEL_PYTHON_ID_GENERATOR` | `random` | ID generator for the global `TracerProvider`. |
+
+### Exporter names
+
+Pass one or more names as a comma-separated value, for example `--traces_exporter zipkin_json,otlp`.
+
+**Trace exporters**
+
+| Name | Description |
+|------|-------------|
+| `otlp` | OTLP (gRPC by default). |
+| `otlp_proto_grpc` | OTLP over gRPC *(deprecated, use `otlp`)* |
+| `otlp_proto_http` | OTLP over HTTP/protobuf *(deprecated, use `otlp`)* |
+| `console` | Prints JSON spans to stdout. Useful for local development. |
+| `zipkin_json` | Zipkin JSON format. |
+| `zipkin_proto` | Zipkin protobuf format. |
+| `jaeger_proto` | Jaeger protobuf format. |
+| `jaeger_thrift` | Jaeger Thrift format. |
+| `opencensus` | OpenCensus exporter. |
+| `none` | Disables trace export entirely. |
+
+**Metrics exporters**
+
+| Name | Description |
+|------|-------------|
+| `otlp` | OTLP (gRPC by default). |
+| `otlp_proto_grpc` | OTLP over gRPC *(deprecated, use `otlp`)* |
+| `prometheus` | Prometheus scrape endpoint. |
+| `none` | Disables metrics export entirely. |
+
+<Note>
+  The default transport for `otlp` is gRPC. To use HTTP, set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`.
+</Note>
+
+### Additional environment variables
+
+These variables are read by `opentelemetry-instrument` at startup but do not have corresponding CLI flags.
+
+**`OTEL_PYTHON_DISABLED_INSTRUMENTATIONS`**
+
+A comma-separated list of instrumentation entry point names to skip. Use this to exclude specific libraries from auto-instrumentation.
+
+```bash
+export OTEL_PYTHON_DISABLED_INSTRUMENTATIONS="requests,django"
+opentelemetry-instrument python app.py
+```
+
+Set to `*` to disable all instrumentations:
+
+```bash
+export OTEL_PYTHON_DISABLED_INSTRUMENTATIONS="*"
+```
+
+**`OTEL_PYTHON_AUTO_INSTRUMENTATION_EXPERIMENTAL_GEVENT_PATCH`**
+
+Set to `patch_all` to call `gevent.monkey.patch_all()` before instrumentation runs. This is experimental and intended for gevent-based applications.
+
+```bash
+export OTEL_PYTHON_AUTO_INSTRUMENTATION_EXPERIMENTAL_GEVENT_PATCH=patch_all
+```
+
+### CLI examples
+
+Send traces to the console while running Flask on port 3000:
+
+```bash
+opentelemetry-instrument --traces_exporter console flask run --port=3000
+```
+
+Export traces to both Zipkin and an OTLP collector, then start Celery:
+
+```bash
+opentelemetry-instrument --traces_exporter zipkin_json,otlp celery -A tasks worker --loglevel=info
+```
+
+Use a specific ID generator:
+
+```bash
+opentelemetry-instrument --id_generator random flask run --port=3000
+```
+
+---
+
+## CLI vs. programmatic
+
+<Tabs>
+  <Tab title="CLI (zero-code)">
+    Use the CLI when you want automatic, zero-code instrumentation. The CLI configures the SDK and runs your program without any source changes.
+
+    ```bash
+    # Install packages
+    pip install "opentelemetry-distro[otlp]"
+    opentelemetry-bootstrap -a install
+
+    # Run with console exporter
+    opentelemetry-instrument --traces_exporter console python app.py
+
+    # Run with OTLP exporter and a custom service name
+    OTEL_SERVICE_NAME=my-service opentelemetry-instrument python app.py
+    ```
+
+    The CLI is the recommended approach for most applications. It works with any Python program and does not require you to modify your code.
+  </Tab>
+  <Tab title="Programmatic">
+    Use the programmatic API when you need to instrument from within your application code — for example, when the CLI is not available, when running inside a framework that controls startup, or when you need to call `initialize()` before importing certain libraries.
+
+    ```python
+    from opentelemetry.instrumentation import auto_instrumentation
+
+    # Must be called before importing any libraries that will be instrumented
+    auto_instrumentation.initialize()
+    ```
+
+    `initialize()` accepts one optional parameter:
+
+    | Parameter | Type | Default | Description |
+    |-----------|------|---------|-------------|
+    | `swallow_exceptions` | `bool` | `True` | When `True`, instrumentation errors are logged but not re-raised. Set to `False` to propagate exceptions to the caller. |
+
+    Example with exception propagation enabled:
+
+    ```python
+    from opentelemetry.instrumentation import auto_instrumentation
+
+    auto_instrumentation.initialize(swallow_exceptions=False)
+    ```
+
+    <Warning>
+      `initialize()` must be called before the libraries it instruments are imported. If Flask is already imported before `initialize()` runs, the Flask instrumentation will not be applied.
+    </Warning>
+  </Tab>
+</Tabs>
+
+---
+
+## Custom distro and configurator
+
+If you have built a custom distro or configurator, register it as an entry point under `opentelemetry_distro` or `opentelemetry_configurator` respectively, then tell `opentelemetry-instrument` which one to use:
+
+```bash
+opentelemetry-instrument --distro my_custom_distro --configurator my_custom_configurator python app.py
+```
+
+Or via environment variables:
+
+```bash
+export OTEL_PYTHON_DISTRO=my_custom_distro
+export OTEL_PYTHON_CONFIGURATOR=my_custom_configurator
+opentelemetry-instrument python app.py
+```
+
+If multiple distros or configurators are registered in the environment, you must specify which one to use with these variables — otherwise the behavior is undefined.

@@ -1,0 +1,205 @@
+---
+title: "Kafka"
+description: "OpenTelemetry instrumentation for kafka-python, kafka-python-ng, and confluent-kafka."
+---
+
+Three separate packages cover Kafka clients in Python. Select the tab that matches your
+dependency.
+
+<Tabs>
+  <Tab title="kafka-python / kafka-python-ng">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-kafka-python
+```
+
+Install the Kafka client library:
+
+```bash
+pip install kafka-python      # original package
+# or
+pip install kafka-python-ng   # community-maintained fork
+```
+
+## Usage
+
+### Auto-instrumentation
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+```python
+from opentelemetry.instrumentation.kafka import KafkaInstrumentor
+from kafka import KafkaProducer, KafkaConsumer
+
+KafkaInstrumentor().instrument()
+
+producer = KafkaProducer(bootstrap_servers=["localhost:9092"])
+producer.send("my-topic", b"raw_bytes")
+
+consumer = KafkaConsumer(
+    "my-topic",
+    group_id="my-group",
+    bootstrap_servers=["localhost:9092"],
+)
+for message in consumer:
+    print(message)
+```
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="produce_hook" type="Callable[[Span, args, kwargs], None]">
+  Called just before a message is produced. Signature:
+  `def produce_hook(span, args, kwargs)`.
+</ParamField>
+
+<ParamField path="consume_hook" type="Callable[[Span, record, args, kwargs], None]">
+  Called just after a message is consumed. Signature:
+  `def consume_hook(span, record, args, kwargs)`.
+</ParamField>
+
+### Example with hooks
+
+```python
+from opentelemetry.instrumentation.kafka import KafkaInstrumentor
+
+def produce_hook(span, args, kwargs):
+    if span and span.is_recording():
+        span.set_attribute("app.message.key", str(kwargs.get("key")))
+
+def consume_hook(span, record, args, kwargs):
+    if span and span.is_recording():
+        span.set_attribute("app.message.offset", record.offset)
+
+KafkaInstrumentor().instrument(
+    produce_hook=produce_hook,
+    consume_hook=consume_hook,
+)
+```
+
+## Spans produced
+
+| Span | Kind | Trigger |
+|------|------|---------|
+| `<topic> send` | `PRODUCER` | `KafkaProducer.send()` |
+| `<topic> receive` | `CONSUMER` | `KafkaConsumer.__next__()` |
+
+| Attribute | Description |
+|-----------|-------------|
+| `messaging.system` | Always `kafka` |
+| `messaging.destination` | The topic name |
+| `messaging.destination_kind` | Always `topic` |
+| `messaging.kafka.partition` | Partition number (consumer spans) |
+| `messaging.kafka.message.offset` | Message offset (consumer spans) |
+
+Context propagation is injected into message headers on produce and extracted on consume,
+linking producer and consumer spans across services.
+
+## Supported versions
+
+`kafka-python >= 2.0, < 3.0` or `kafka-python-ng >= 2.0, < 3.0`
+
+  </Tab>
+  <Tab title="confluent-kafka">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-confluent-kafka
+pip install confluent-kafka
+```
+
+## Usage
+
+### Auto-instrumentation
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Global instrumentation** — replaces `confluent_kafka.Producer` and `confluent_kafka.Consumer`
+with instrumented subclasses:
+
+```python
+from opentelemetry.instrumentation.confluent_kafka import ConfluentKafkaInstrumentor
+from confluent_kafka import Producer, Consumer
+
+ConfluentKafkaInstrumentor().instrument()
+
+producer = Producer({"bootstrap.servers": "localhost:9092"})
+producer.produce("my-topic", b"raw_bytes")
+
+consumer = Consumer({
+    "bootstrap.servers": "localhost:9092",
+    "group.id": "my-group",
+    "auto.offset.reset": "earliest",
+})
+consumer.subscribe(["my-topic"])
+msg = consumer.poll(timeout=1.0)
+```
+
+**Per-instance instrumentation** — wraps existing producer/consumer objects via proxy classes:
+
+```python
+from opentelemetry.instrumentation.confluent_kafka import ConfluentKafkaInstrumentor
+from confluent_kafka import Producer, Consumer
+
+inst = ConfluentKafkaInstrumentor()
+
+raw_producer = Producer({"bootstrap.servers": "localhost:9092"})
+raw_consumer = Consumer({
+    "bootstrap.servers": "localhost:9092",
+    "group.id": "my-group",
+    "auto.offset.reset": "earliest",
+})
+
+producer = inst.instrument_producer(raw_producer)
+consumer = inst.instrument_consumer(raw_consumer)
+
+producer.produce("my-topic", b"raw_bytes")
+msg = consumer.poll()
+```
+
+<Note>
+  `instrument_producer` returns a `ProxiedProducer` and `instrument_consumer` returns a
+  `ProxiedConsumer`. These wrap the original objects and forward all calls, so you can use
+  them as drop-in replacements.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+## Spans produced
+
+| Span | Kind | Trigger |
+|------|------|---------|
+| `<topic> send` | `PRODUCER` | `Producer.produce()` |
+| `recv` | `CONSUMER` | `Consumer.poll()` or `Consumer.consume()` |
+
+| Attribute | Description |
+|-----------|-------------|
+| `messaging.system` | Always `kafka` |
+| `messaging.destination` | The topic name |
+| `messaging.kafka.partition` | Partition number |
+| `messaging.kafka.message.offset` | Message offset |
+
+## Supported versions
+
+`confluent-kafka >= 1.8.2, < 3.0.0`
+
+  </Tab>
+</Tabs>

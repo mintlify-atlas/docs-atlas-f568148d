@@ -1,0 +1,105 @@
+---
+title: "PyMongo"
+description: "OpenTelemetry instrumentation for PyMongo."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-pymongo
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+```python
+from pymongo import MongoClient
+from opentelemetry.instrumentation.pymongo import PymongoInstrumentor
+
+PymongoInstrumentor().instrument()
+
+client = MongoClient()
+db = client["my_database"]
+collection = db["my_collection"]
+collection.find_one()
+```
+
+<Note>
+  `PymongoInstrumentor` registers a `CommandListener` with the PyMongo monitoring API. The
+  listener is registered once; subsequent calls to `instrument()` re-enable it rather than
+  registering a duplicate.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, CommandStartedEvent], None]">
+  Called when a MongoDB command starts, before the span is recorded. Receives the active span
+  and a `pymongo.monitoring.CommandStartedEvent`.
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, CommandSucceededEvent], None]">
+  Called when a MongoDB command succeeds. Receives the active span and a
+  `pymongo.monitoring.CommandSucceededEvent`.
+</ParamField>
+
+<ParamField path="failed_hook" type="Callable[[Span, CommandFailedEvent], None]">
+  Called when a MongoDB command fails. Receives the active span and a
+  `pymongo.monitoring.CommandFailedEvent`.
+</ParamField>
+
+<ParamField path="capture_statement" type="boolean" default="False">
+  When `True`, appends the target collection name or filter document to the `db.statement`
+  attribute.
+</ParamField>
+
+### Example with hooks
+
+```python
+from opentelemetry.instrumentation.pymongo import PymongoInstrumentor
+
+def request_hook(span, event):
+    span.set_attribute("db.request_id", event.request_id)
+
+def response_hook(span, event):
+    span.set_attribute("db.duration_ms", event.duration_micros / 1000)
+
+def failed_hook(span, event):
+    span.set_attribute("db.error", str(event.failure))
+
+PymongoInstrumentor().instrument(
+    request_hook=request_hook,
+    response_hook=response_hook,
+    failed_hook=failed_hook,
+)
+```
+
+## Spans produced
+
+One span is created per MongoDB command. Span names follow the pattern `<database>.<command>`,
+for example `my_database.find`.
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Always `mongodb` |
+| `db.name` | The database name |
+| `db.statement` | The command name, optionally with collection (if `capture_statement=True`) |
+| `db.mongodb.collection` | The collection name when available |
+| `net.peer.name` | MongoDB server hostname |
+| `net.peer.port` | MongoDB server port |
+
+## Supported versions
+
+`pymongo >= 3.1, < 5.0`

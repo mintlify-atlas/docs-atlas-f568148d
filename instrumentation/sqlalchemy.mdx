@@ -1,0 +1,124 @@
+---
+title: "SQLAlchemy"
+description: "OpenTelemetry instrumentation for SQLAlchemy."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-sqlalchemy
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Sync engine:**
+
+```python
+from sqlalchemy import create_engine
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+engine = create_engine("postgresql://user:pass@localhost/mydb")
+SQLAlchemyInstrumentor().instrument(engine=engine)
+```
+
+**Async engine (SQLAlchemy >= 1.4):**
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/mydb")
+SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+```
+
+<Note>
+When `engine` is not passed, `SQLAlchemyInstrumentor` patches `sqlalchemy.create_engine` and
+`sqlalchemy.ext.asyncio.create_async_engine` globally, so all engines created after calling
+`instrument()` are automatically traced. You can also pass a list of engines via the `engines`
+keyword argument.
+</Note>
+
+The `instrument()` call returns an `EngineTracer` instance (or a list of them) that manages the
+SQLAlchemy event listeners responsible for span creation.
+
+## Configuration
+
+<ParamField path="engine" type="sqlalchemy.engine.base.Engine">
+  A SQLAlchemy engine instance to instrument immediately.
+</ParamField>
+
+<ParamField path="engines" type="list">
+  A list of SQLAlchemy engine instances to instrument immediately.
+</ParamField>
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  The `MeterProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="enable_commenter" type="boolean" default="False">
+  Enable SQLcommenter, which appends OpenTelemetry context as a SQL comment to each query.
+  For example: `SELECT 1; /*traceparent='00-abc...-01'*/`.
+</ParamField>
+
+<ParamField path="commenter_options" type="object" default="{}">
+  Opt out of specific SQLcommenter key-value pairs. Accepted keys:
+
+  | Key | Description | Example |
+  |-----|-------------|---------|
+  | `db_driver` | Database driver name | `db_driver='psycopg2'` |
+  | `db_framework` | Framework name and version | `db_framework='sqlalchemy:1.4.0'` |
+  | `opentelemetry_values` | Traceparent propagation context | `traceparent='00-...-01'` |
+
+  Set a key to `False` to exclude it: `commenter_options={"db_driver": False}`.
+</ParamField>
+
+<ParamField path="enable_attribute_commenter" type="boolean" default="False">
+  When `True`, also includes the SQL comment in the `db.statement` / `db.query.text` span
+  attribute. Requires `enable_commenter=True`.
+
+  <Warning>
+    Enabling this may produce high-cardinality span attributes. Review the
+    [semantic conventions guidance](https://opentelemetry.io/docs/specs/semconv/database/database-spans/#generating-a-summary-of-the-query-text)
+    before enabling in production.
+  </Warning>
+</ParamField>
+
+## Spans produced
+
+One span is created per SQL statement execution. Span names follow the pattern
+`<db_vendor> <operation>` (e.g., `postgresql SELECT`).
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Database vendor identifier (e.g., `postgresql`, `mysql`, `sqlite`) |
+| `db.name` | Name of the database |
+| `db.statement` / `db.query.text` | The SQL statement executed |
+| `db.operation` | SQL operation name (e.g., `SELECT`, `INSERT`) |
+| `db.user` | Database user |
+| `net.peer.name` | Hostname of the database server |
+| `net.peer.port` | Port of the database server |
+| `net.transport` | Always `ip_tcp` |
+
+The instrumentor also records the `db.client.connections.usage` metric (an up-down counter)
+tracking the number of connections in use.
+
+## Supported versions
+
+`sqlalchemy >= 1.0.0, < 2.1.0`
+
+Both synchronous and asynchronous engines are supported. Async engine support requires
+SQLAlchemy >= 1.4 and an async driver such as `asyncpg` or `aiosqlite`.

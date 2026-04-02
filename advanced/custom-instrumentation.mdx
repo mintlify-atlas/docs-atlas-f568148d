@@ -1,0 +1,126 @@
+---
+title: "Building Custom Instrumentation"
+description: "Create your own OpenTelemetry instrumentor using BaseInstrumentor to add tracing to any Python library."
+---
+
+The `BaseInstrumentor` ABC in `opentelemetry-instrumentation` is the foundation for all instrumentation packages in this repo. Implement it to add automatic tracing for any library — and optionally make it discoverable by `opentelemetry-instrument`.
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation opentelemetry-sdk
+```
+
+## The BaseInstrumentor interface
+
+```python
+from abc import abstractmethod
+from typing import Any, Collection
+from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
+
+class MyLibraryInstrumentor(BaseInstrumentor):
+
+    def instrumentation_dependencies(self) -> Collection[str]:
+        """Return version specifiers for the library being instrumented."""
+        return ["mylibrary >= 1.0, < 3.0"]
+
+    def _instrument(self, **kwargs: Any):
+        """Patch the target library to emit spans."""
+        # apply your monkey-patches here
+        pass
+
+    def _uninstrument(self, **kwargs: Any):
+        """Remove patches applied by _instrument."""
+        # undo monkey-patches here
+        pass
+```
+
+### Key behaviours
+
+- **Singleton**: `BaseInstrumentor` enforces one instance per class. Calling `MyLibraryInstrumentor()` twice returns the same object.
+- **Idempotent**: `instrument()` logs a warning and returns early if already instrumented. `uninstrument()` does the same if not instrumented.
+- **Dependency check**: Before patching, `instrument()` calls `get_dependency_conflicts()` against the list returned by `instrumentation_dependencies()`. If the installed version doesn't match, it logs an error and skips instrumentation.
+
+## Complete example
+
+```python my_instrumentor.py
+from typing import Any, Collection
+from unittest.mock import patch
+
+from opentelemetry import trace
+from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
+
+_tracer = None
+_original_func = None
+
+
+def _instrumented_call(self, *args, **kwargs):
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("mylibrary.call") as span:
+        span.set_attribute("mylibrary.arg", str(args[0]) if args else "")
+        return _original_func(self, *args, **kwargs)
+
+
+class MyLibraryInstrumentor(BaseInstrumentor):
+
+    def instrumentation_dependencies(self) -> Collection[str]:
+        return ["mylibrary >= 1.0, < 3.0"]
+
+    def _instrument(self, **kwargs: Any):
+        import mylibrary
+
+        global _original_func
+        _original_func = mylibrary.Client.call
+        mylibrary.Client.call = _instrumented_call
+
+    def _uninstrument(self, **kwargs: Any):
+        import mylibrary
+
+        mylibrary.Client.call = _original_func
+```
+
+### Using your instrumentor
+
+```python app.py
+from my_instrumentor import MyLibraryInstrumentor
+
+# Instrument once at startup, before the library is used
+MyLibraryInstrumentor().instrument()
+
+# ... your application code ...
+
+# To remove instrumentation at runtime:
+MyLibraryInstrumentor().uninstrument()
+```
+
+## Accepting configuration via instrument()
+
+Pass keyword arguments to `instrument()` to allow callers to customize behaviour:
+
+```python
+def _instrument(self, **kwargs: Any):
+    request_hook = kwargs.get("request_hook")
+    # store hook for use in the patch
+```
+
+```python
+MyLibraryInstrumentor().instrument(request_hook=my_hook)
+```
+
+## Auto-instrumentation discovery
+
+Register your instrumentor as an entry point so `opentelemetry-instrument` discovers it automatically:
+
+```toml pyproject.toml
+[project.entry-points.opentelemetry_instrumentor]
+mylibrary = "my_package.instrumentor:MyLibraryInstrumentor"
+```
+
+After installing the package, `opentelemetry-bootstrap` will detect it and `opentelemetry-instrument` will invoke `instrument()` before starting your program.
+
+<Tip>
+Use `skip_dep_check=True` in tests to bypass the dependency version check:
+```python
+MyLibraryInstrumentor().instrument(skip_dep_check=True)
+```
+</Tip>

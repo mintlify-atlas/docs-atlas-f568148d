@@ -1,97 +1,67 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "OpenTelemetry Python Contrib"
+description: "Auto-instrumentation libraries for Python — add distributed tracing, metrics, and logs to your application without changing your code."
 ---
 
-## Setting up
+OpenTelemetry Python Contrib provides over 50 instrumentation packages for popular Python frameworks, databases, messaging systems, HTTP clients, and GenAI SDKs. Instrument your Python application in minutes using the `opentelemetry-instrument` command or by calling each package's API directly.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Instrument your first Python app in under 5 minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Auto-instrumentation" icon="wand-magic-sparkles" href="/auto-instrumentation">
+    Zero-code instrumentation with the `opentelemetry-instrument` CLI.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Instrumentation Reference" icon="book" href="/instrumentation/flask">
+    Browse all 50+ instrumentation packages by framework, database, and more.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="GenAI Instrumentation" icon="microchip" href="/guides/genai">
+    Trace OpenAI, Anthropic, LangChain, and Vertex AI calls automatically.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## How it works
 
-Everything you need to create world-class documentation.
+OpenTelemetry Python Contrib wraps popular libraries at import time — intercepting calls to generate spans, metrics, and log records that flow to any OpenTelemetry-compatible backend (Jaeger, Zipkin, OTLP collectors, cloud providers, and more).
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Install the instrumentation packages">
+    Install `opentelemetry-distro` (which includes the `opentelemetry-instrument` command) plus any per-library packages you need.
 
-## Need inspiration?
+    ```bash
+    pip install opentelemetry-distro[otlp]
+    opentelemetry-bootstrap -a install
+    ```
+  </Step>
+  <Step title="Run your app with auto-instrumentation">
+    Prefix your normal start command with `opentelemetry-instrument` to enable zero-code tracing.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+    ```bash
+    opentelemetry-instrument python app.py
+    ```
+  </Step>
+  <Step title="View your traces">
+    Telemetry is exported to the configured backend. Use the `console` exporter to verify traces locally during development.
+
+    ```bash
+    opentelemetry-instrument --traces_exporter console python app.py
+    ```
+  </Step>
+</Steps>
+
+## Explore by category
+
+<CardGroup cols={2}>
+  <Card title="Web Frameworks" icon="globe" href="/guides/web-frameworks">
+    Flask, Django, FastAPI, Starlette, Tornado, Falcon, Pyramid, aiohttp
+  </Card>
+  <Card title="Databases" icon="database" href="/guides/databases">
+    SQLAlchemy, Redis, PostgreSQL, MongoDB, Elasticsearch, Cassandra
+  </Card>
+  <Card title="Messaging" icon="envelope" href="/guides/messaging">
+    Celery, Kafka, RabbitMQ (pika)
+  </Card>
+  <Card title="HTTP Clients" icon="arrow-right-arrow-left" href="/guides/http-clients">
+    requests, httpx, urllib, urllib3, gRPC, AWS botocore
+  </Card>
+</CardGroup>

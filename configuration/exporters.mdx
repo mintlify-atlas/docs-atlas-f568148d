@@ -1,0 +1,161 @@
+---
+title: 'Exporters'
+description: 'Configure trace, metric, and log exporters for OpenTelemetry Python auto-instrumentation.'
+keywords: ['exporters', 'otlp', 'prometheus', 'zipkin', 'jaeger', 'console', 'configuration']
+---
+
+`opentelemetry-instrument` supports multiple exporter backends for each telemetry signal. Exporters are selected by name and can be configured via CLI flags or environment variables.
+
+## Setting exporters
+
+<CodeGroup>
+
+```bash CLI flags
+opentelemetry-instrument \
+  --traces_exporter otlp \
+  --metrics_exporter prometheus \
+  python app.py
+```
+
+```bash Environment variables
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_METRICS_EXPORTER=prometheus \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+opentelemetry-instrument python app.py
+```
+
+</CodeGroup>
+
+You can configure multiple exporters for a single signal by passing a comma-separated list:
+
+```bash
+opentelemetry-instrument --traces_exporter zipkin_json,otlp python app.py
+```
+
+## Trace exporters
+
+| Name | Description |
+|---|---|
+| `otlp` | OTLP exporter (default). Uses gRPC transport by default. |
+| `otlp_proto_grpc` | OTLP over gRPC. **Deprecated** — use `otlp` with `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`. |
+| `otlp_proto_http` | OTLP over HTTP/protobuf. **Deprecated** — use `otlp` with `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`. |
+| `console` | Prints JSON span data to stdout. Useful for local development. |
+| `zipkin_json` | Zipkin exporter using JSON encoding. |
+| `zipkin_proto` | Zipkin exporter using protobuf encoding. |
+| `jaeger_proto` | Jaeger exporter using protobuf encoding. |
+| `jaeger_thrift` | Jaeger exporter using Thrift encoding. |
+| `none` | Disables trace export entirely. |
+
+<Note>
+  `otlp_proto_grpc` and `otlp_proto_http` are deprecated. Use `otlp` and control the transport protocol with the `OTEL_EXPORTER_OTLP_PROTOCOL` environment variable instead.
+</Note>
+
+### Trace exporter examples
+
+<CodeGroup>
+
+```bash Console (local development)
+opentelemetry-instrument --traces_exporter console python app.py
+```
+
+```bash Zipkin + OTLP (multiple exporters)
+opentelemetry-instrument --traces_exporter zipkin_json,otlp python app.py
+```
+
+```bash OTLP via environment variable
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+opentelemetry-instrument python app.py
+```
+
+</CodeGroup>
+
+## Metric exporters
+
+| Name | Description |
+|---|---|
+| `otlp` | OTLP exporter. Uses gRPC transport by default. |
+| `otlp_proto_grpc` | OTLP over gRPC. **Deprecated** — use `otlp` with `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`. |
+| `prometheus` | Exposes metrics on a Prometheus-compatible `/metrics` HTTP endpoint. |
+| `none` | Disables metric export entirely. |
+
+### Metric exporter examples
+
+<CodeGroup>
+
+```bash Prometheus
+OTEL_METRICS_EXPORTER=prometheus opentelemetry-instrument python app.py
+```
+
+```bash OTLP
+OTEL_METRICS_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+opentelemetry-instrument python app.py
+```
+
+</CodeGroup>
+
+## Logs exporters
+
+| Name | Description |
+|---|---|
+| `otlp` | OTLP exporter. Uses gRPC transport by default. |
+| `console` | Prints log records as JSON to stdout. |
+| `none` | Disables log export entirely. |
+
+### Logs exporter example
+
+```bash
+OTEL_LOGS_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 \
+opentelemetry-instrument python app.py
+```
+
+## OTLP endpoint configuration
+
+When using the `otlp` exporter, the following environment variables control how data is sent:
+
+<ParamField query="OTEL_EXPORTER_OTLP_ENDPOINT" type="string" default="http://localhost:4317">
+  Base URL of the OTLP receiver. For gRPC this is the host and port (e.g., `http://localhost:4317`). For HTTP/protobuf this should include the path prefix if required by your collector.
+
+  ```bash
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+  ```
+
+  Signal-specific overrides are also available: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`.
+</ParamField>
+
+<ParamField query="OTEL_EXPORTER_OTLP_HEADERS" type="string">
+  Comma-separated list of `key=value` HTTP headers to include with every OTLP export request. Use this to pass authentication tokens or tenant IDs.
+
+  ```bash
+  OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer my-token,X-Tenant=acme"
+  ```
+</ParamField>
+
+<ParamField query="OTEL_EXPORTER_OTLP_PROTOCOL" type="string" default="grpc">
+  Transport protocol for the `otlp` exporter. The `opentelemetry-distro` package sets this to `grpc` by default.
+
+  | Value | Transport |
+  |---|---|
+  | `grpc` | gRPC (default) |
+  | `http/protobuf` | HTTP with protobuf encoding |
+  | `http/json` | HTTP with JSON encoding |
+
+  ```bash
+  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+  opentelemetry-instrument python app.py
+  ```
+</ParamField>
+
+## Disabling export
+
+Set any exporter variable to `none` to disable export for that signal without removing the instrumentation:
+
+```bash
+OTEL_TRACES_EXPORTER=none \
+OTEL_METRICS_EXPORTER=none \
+OTEL_LOGS_EXPORTER=none \
+opentelemetry-instrument python app.py
+```

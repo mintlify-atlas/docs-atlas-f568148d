@@ -1,0 +1,203 @@
+---
+title: "HTTPX"
+description: "OpenTelemetry instrumentation for the Python httpx library, covering both sync and async clients."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-httpx
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` CLI to instrument without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Instrumenting all clients**
+
+Call `HTTPXClientInstrumentor().instrument()` once to trace every `httpx.Client` and `httpx.AsyncClient` in your application:
+
+```python
+import asyncio
+import httpx
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+HTTPXClientInstrumentor().instrument()
+
+# Sync client
+with httpx.Client() as client:
+    response = client.get("https://example.com")
+
+# Async client
+async def get(url):
+    async with httpx.AsyncClient() as client:
+        return await client.get(url)
+
+asyncio.run(get("https://example.com"))
+```
+
+**Instrumenting individual clients**
+
+To trace only specific client instances, use `instrument_client`:
+
+```python
+import asyncio
+import httpx
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+with httpx.Client() as client:
+    HTTPXClientInstrumentor.instrument_client(client)
+    response = client.get("https://example.com")
+
+async def get(url):
+    async with httpx.AsyncClient() as client:
+        HTTPXClientInstrumentor.instrument_client(client)
+        return await client.get(url)
+
+asyncio.run(get("https://example.com"))
+```
+
+**Uninstrumenting**
+
+```python
+import httpx
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+HTTPXClientInstrumentor().instrument()
+client = httpx.Client()
+
+# Uninstrument a specific client
+HTTPXClientInstrumentor.uninstrument_client(client)
+
+# Uninstrument all clients
+HTTPXClientInstrumentor().uninstrument()
+```
+
+**Using transport classes directly**
+
+If you prefer not to use the instrumentor, wrap the underlying transport with `SyncOpenTelemetryTransport` or `AsyncOpenTelemetryTransport`:
+
+<CodeGroup>
+
+```python sync transport
+import httpx
+from opentelemetry.instrumentation.httpx import SyncOpenTelemetryTransport
+
+transport = httpx.HTTPTransport()
+telemetry_transport = SyncOpenTelemetryTransport(transport)
+
+with httpx.Client(transport=telemetry_transport) as client:
+    response = client.get("https://example.com")
+```
+
+```python async transport
+import asyncio
+import httpx
+from opentelemetry.instrumentation.httpx import AsyncOpenTelemetryTransport
+
+async def get(url):
+    transport = httpx.AsyncHTTPTransport()
+    telemetry_transport = AsyncOpenTelemetryTransport(transport)
+    async with httpx.AsyncClient(transport=telemetry_transport) as client:
+        return await client.get(url)
+
+asyncio.run(get("https://example.com"))
+```
+
+</CodeGroup>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Custom `MeterProvider` to use. Defaults to the global meter provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, RequestInfo], None]">
+  Callback invoked right after a span is created for a sync request. Receives the active span and a `RequestInfo` named tuple containing `(method, url, headers, stream, extensions)`.
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, RequestInfo, ResponseInfo], None]">
+  Callback invoked right before a span ends for a sync request. Receives the span, `RequestInfo`, and a `ResponseInfo` named tuple containing `(status_code, headers, stream, extensions)`.
+</ParamField>
+
+<ParamField path="async_request_hook" type="Callable[[Span, RequestInfo], Awaitable]">
+  Async equivalent of `request_hook` for `httpx.AsyncClient`. Must be a coroutine function.
+</ParamField>
+
+<ParamField path="async_response_hook" type="Callable[[Span, RequestInfo, ResponseInfo], Awaitable]">
+  Async equivalent of `response_hook` for `httpx.AsyncClient`. Must be a coroutine function.
+</ParamField>
+
+**Hook example:**
+
+```python
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+def request_hook(span, request):
+    # request is a RequestInfo: (method, url, headers, stream, extensions)
+    span.set_attribute("custom.url", str(request.url))
+
+def response_hook(span, request, response):
+    # response is a ResponseInfo: (status_code, headers, stream, extensions)
+    span.set_attribute("custom.status", response.status_code)
+
+async def async_request_hook(span, request):
+    span.set_attribute("custom.async", True)
+
+async def async_response_hook(span, request, response):
+    pass
+
+HTTPXClientInstrumentor().instrument(
+    request_hook=request_hook,
+    response_hook=response_hook,
+    async_request_hook=async_request_hook,
+    async_response_hook=async_response_hook,
+)
+```
+
+<Note>
+The request hook receives the raw arguments provided to the transport layer. The response hook receives the raw return values from the transport layer.
+</Note>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_HTTPX_EXCLUDED_URLS` | Comma-delimited regexes of URLs to exclude. Falls back to `OTEL_PYTHON_EXCLUDED_URLS`. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_REQUEST` | Comma-delimited list of request header names to capture as span attributes. Regexes are supported. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_RESPONSE` | Comma-delimited list of response header names to capture as span attributes. Regexes are supported. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Comma-delimited list of header names whose values are replaced with `[REDACTED]`. |
+
+## Spans produced
+
+`HTTPXClientInstrumentor` creates one **client** span per HTTP request.
+
+| Attribute | Description |
+|---|---|
+| `http.method` / `http.request.method` | HTTP method (e.g., `GET`, `POST`) |
+| `http.url` / `url.full` | Full request URL (credentials redacted) |
+| `http.status_code` / `http.response.status_code` | HTTP response status code |
+| `http.flavor` / `network.protocol.version` | HTTP protocol version (e.g., `1.1`, `2`) |
+| `server.address` | Hostname of the target server |
+| `server.port` | Port of the target server |
+| `network.peer.address` | IP address of the connected peer |
+| `network.peer.port` | Port of the connected peer |
+| `error.type` | Exception class name, set on network errors |
+
+The instrumentation also records `http.client.duration` (ms) and `http.client.request.duration` (s) histogram metrics, depending on the active semantic convention mode.
+
+## Supported versions
+
+Requires `httpx >= 0.18.0`.

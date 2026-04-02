@@ -1,0 +1,99 @@
+---
+title: "Creating a New Instrumentation"
+description: "Step-by-step guide to adding a new instrumentation package to opentelemetry-python-contrib."
+---
+
+This guide walks you through creating a new instrumentation package for a Python library and contributing it upstream.
+
+## When is a new instrumentation appropriate?
+
+A new instrumentation package is appropriate when:
+- The target library has a stable public API that can be patched non-intrusively
+- There is community interest (open a GitHub issue first to gauge interest)
+- You are willing to become a CODEOWNER and maintain the package
+
+## Using the template
+
+The `_template/` directory provides the minimum file structure for a new instrumentation:
+
+```
+_template/
+├── pyproject.toml      # Package config and entry points
+├── README.rst          # Package documentation
+└── version.py          # Version file
+```
+
+<Steps>
+  <Step title="Copy the template">
+    ```bash
+    cp -r _template/ instrumentation/opentelemetry-instrumentation-mylib/
+    ```
+  </Step>
+  <Step title="Update pyproject.toml">
+    Replace all `<REPLACE ME>` placeholders:
+
+    ```toml pyproject.toml
+    [project]
+    name = "opentelemetry-instrumentation-mylib"
+    description = "MyLib tracing for OpenTelemetry"
+
+    [project.entry-points.opentelemetry_instrumentor]
+    mylib = "opentelemetry.instrumentation.mylib:MyLibInstrumentor"
+
+    [tool.hatch.version]
+    path = "src/opentelemetry/instrumentation/mylib/version.py"
+    ```
+  </Step>
+  <Step title="Create the source directory">
+    ```
+    instrumentation/opentelemetry-instrumentation-mylib/
+    └── src/
+        └── opentelemetry/
+            └── instrumentation/
+                └── mylib/
+                    ├── __init__.py     # The instrumentor class
+                    ├── version.py
+                    └── package.py      # instrumentation_dependencies()
+    ```
+  </Step>
+  <Step title="Implement BaseInstrumentor">
+    See [Building Custom Instrumentation](/advanced/custom-instrumentation) for the full interface. The entry point name must match what you registered in `pyproject.toml`.
+  </Step>
+  <Step title="Add tests">
+    Create a `tests/` directory with unit tests covering all supported library versions. The CI matrix tests against each version listed in `pyproject.toml`.
+  </Step>
+  <Step title="Add to instrumentation/README.md">
+    Add a row to the instrumentation table with the package name, supported versions, metrics support, and semconv status.
+  </Step>
+</Steps>
+
+## Entry point registration
+
+The `opentelemetry_instrumentor` entry point group is what allows `opentelemetry-instrument` to auto-discover your package:
+
+```toml pyproject.toml
+[project.entry-points.opentelemetry_instrumentor]
+mylib = "opentelemetry.instrumentation.mylib:MyLibInstrumentor"
+```
+
+The key (`mylib`) is the name used in `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=mylib`.
+
+## Checklist for 1.0 stable release
+
+From the project README — a package must meet these criteria before being released as `1.0`:
+
+<AccordionGroup>
+  <Accordion title="CODEOWNER assigned">
+    There must be at least one CODEOWNER. Submit an issue explaining your experience with the library and willingness to maintain it. See [.github/CODEOWNERS](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/.github/CODEOWNERS).
+  </Accordion>
+  <Accordion title="Full version test coverage">
+    Unit tests must cover all supported major versions of the instrumented library. Instrumentation packages often use different patching techniques for different major versions.
+  </Accordion>
+  <Accordion title="Clear documentation">
+    Non-obvious usages must be documented — flags, token-as-context patterns, parameters not typical of `BaseInstrumentor`, etc.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+All packages start at beta (`Development Status :: 4 - Beta`). Once all checklist items are met and a CODEOWNER is confirmed, maintainers will release the package at `1.0`.
+</Note>

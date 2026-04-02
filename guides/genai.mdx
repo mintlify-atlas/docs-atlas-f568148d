@@ -1,0 +1,208 @@
+---
+title: "GenAI Instrumentation"
+description: "Automatically instrument OpenAI, Anthropic, LangChain, and other generative AI libraries in Python with OpenTelemetry."
+---
+
+OpenTelemetry Python Contrib provides instrumentation for generative AI SDKs and frameworks under the `instrumentation-genai` directory. These packages capture LLM request and response spans, token usage metrics, and optionally message content, following the [OpenTelemetry Generative AI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
+
+<Warning>
+  All GenAI instrumentation packages have a semconv status of **`development`**. Generative AI semantic conventions are still evolving and breaking changes may be introduced in future releases.
+</Warning>
+
+## Supported Libraries
+
+<CardGroup cols={2}>
+  <Card title="OpenAI (v2)" href="/instrumentation/openai">
+    `opentelemetry-instrumentation-openai-v2`
+    Supports: `openai >= 1.26.0` | Metrics: **Yes** | Semconv: development
+  </Card>
+  <Card title="Anthropic" href="/instrumentation/anthropic">
+    `opentelemetry-instrumentation-anthropic`
+    Supports: `anthropic >= 0.16.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="LangChain" href="/instrumentation/langchain">
+    `opentelemetry-instrumentation-langchain`
+    Supports: `langchain >= 0.3.21` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="Vertex AI" href="/instrumentation/vertexai">
+    `opentelemetry-instrumentation-vertexai`
+    Supports: `google-cloud-aiplatform >= 1.64` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="Google GenAI" href="/instrumentation/vertexai">
+    `opentelemetry-instrumentation-google-genai`, `vertexai`
+    google-genai: `>= 1.32.0` | Vertex AI: `google-cloud-aiplatform >= 1.64`
+  </Card>
+  <Card title="Weaviate / OpenAI Agents / Claude Agent SDK" href="/instrumentation/openai">
+    `opentelemetry-instrumentation-weaviate`, `openai-agents-v2`, `claude-agent-sdk`
+    Install individually via pip; follow the same `Instrumentor().instrument()` pattern.
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Tabs>
+  <Tab title="OpenAI">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-openai-v2
+        ```
+      </Step>
+      <Step title="Instrument all OpenAI clients">
+        `OpenAIInstrumentor` patches the OpenAI Python library globally. All clients created after calling `.instrument()` will automatically trace chat completions, embeddings, and other operations.
+
+        ```python
+        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+        from openai import OpenAI
+
+        OpenAIInstrumentor().instrument()
+
+        client = OpenAI()
+
+        # Chat completion — produces a span with model, token usage, etc.
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": "Write a short poem on open telemetry."},
+            ],
+        )
+
+        # Embeddings — also traced
+        embedding_response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input="Generate vector embeddings for this text",
+        )
+        ```
+      </Step>
+      <Step title="Optional: capture message content">
+        By default, prompt and completion content is not captured. Set `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` to control this behaviour:
+
+        | Value | Effect |
+        |-------|--------|
+        | `true` | Captures content on `gen_ai.{role}.message` / `gen_ai.choice` events (legacy, without `gen_ai_latest_experimental`) |
+        | `span_only` | Captures content as span attributes (requires `gen_ai_latest_experimental`) |
+        | `event_only` | Captures content as event attributes (requires `gen_ai_latest_experimental`) |
+        | `span_and_event` | Captures content on both span and event attributes (requires `gen_ai_latest_experimental`) |
+
+        ```bash
+        export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+        ```
+      </Step>
+      <Step title="Optional: enable latest experimental features">
+        To opt into semantic conventions beyond v1.30.0:
+
+        ```bash
+        export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+        ```
+      </Step>
+    </Steps>
+
+    <Note>
+      Many LLM platforms expose an OpenAI-compatible API. The `openai-v2` instrumentation also works with Azure OpenAI (`gen_ai.system=azure.ai.openai`), Gemini, Perplexity, xAI, DeepSeek, Groq, and MistralAI when accessed through the OpenAI Python SDK.
+    </Note>
+  </Tab>
+  <Tab title="Anthropic">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-anthropic
+        ```
+      </Step>
+      <Step title="Instrument the Anthropic client">
+        `AnthropicInstrumentor` patches the Anthropic Python SDK globally. Call `.instrument()` before creating any client instances.
+
+        ```python
+        from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+        import anthropic
+
+        AnthropicInstrumentor().instrument()
+
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": "Hello, Claude!"}
+            ],
+        )
+        print(response.content)
+        ```
+      </Step>
+      <Step title="Optional: capture message content">
+        Prompt and completion content is not captured by default:
+
+        ```bash
+        export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="LangChain">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-langchain
+        ```
+      </Step>
+      <Step title="Instrument LangChain">
+        ```python
+        from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+
+        LangchainInstrumentor().instrument()
+
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage
+
+        chat = ChatOpenAI(model="gpt-4o-mini")
+        response = chat.invoke([HumanMessage(content="Tell me a joke")])
+        print(response.content)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## What Is Captured
+
+### Spans
+
+Each LLM call produces a span with attributes from the GenAI semantic conventions:
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `gen_ai.system` | LLM provider identifier | `openai`, `anthropic` |
+| `gen_ai.request.model` | Model requested | `gpt-4o-mini`, `claude-3-5-sonnet-20241022` |
+| `gen_ai.response.model` | Model that served the response | `gpt-4o-mini-2024-07-18` |
+| `gen_ai.operation.name` | Operation type | `chat`, `embeddings` |
+| `gen_ai.usage.input_tokens` | Prompt tokens consumed | `42` |
+| `gen_ai.usage.output_tokens` | Completion tokens produced | `128` |
+
+### Metrics (OpenAI v2 only)
+
+`opentelemetry-instrumentation-openai-v2` is the only GenAI package with metrics support. It records:
+
+- **`gen_ai.client.operation.duration`** — histogram of LLM call latency
+- **`gen_ai.client.token.usage`** — histogram of token counts (input and output), attributed by model and operation
+
+### Message Content
+
+Prompt and completion text is **not captured by default** in any GenAI instrumentation. Enable it explicitly via `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` as described above.
+
+## Uninstrumenting
+
+To stop tracing, call `.uninstrument()` on the instrumentor:
+
+```python
+from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+
+OpenAIInstrumentor().uninstrument()
+```
+
+## Reference Pages
+
+| Library | Reference |
+|---------|-----------|
+| OpenAI (v2) | [/instrumentation/openai](/instrumentation/openai) |
+| Anthropic | [/instrumentation/anthropic](/instrumentation/anthropic) |
+| LangChain | [/instrumentation/langchain](/instrumentation/langchain) |
+| Vertex AI | [/instrumentation/vertexai](/instrumentation/vertexai) |

@@ -1,0 +1,143 @@
+---
+title: "Botocore"
+description: "OpenTelemetry instrumentation for botocore and aiobotocore, covering all boto3/botocore AWS API calls."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-botocore
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` CLI to instrument without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+<Tabs>
+  <Tab title="Sync (botocore / boto3)">
+    Call `BotocoreInstrumentor().instrument()` before creating any botocore clients. All subsequent API calls are automatically traced.
+
+    ```python
+    import botocore.session
+    from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+
+    BotocoreInstrumentor().instrument()
+
+    session = botocore.session.get_session()
+    session.set_credentials(access_key="access-key", secret_key="secret-key")
+    ec2 = session.create_client("ec2", region_name="us-west-2")
+    ec2.describe_instances()
+    ```
+  </Tab>
+  <Tab title="Async (aiobotocore)">
+    Use `AiobotocoreInstrumentor` for async applications:
+
+    ```python
+    import asyncio
+    import aiobotocore.session
+    from opentelemetry.instrumentation.botocore import AiobotocoreInstrumentor
+
+    async def main():
+        AiobotocoreInstrumentor().instrument()
+
+        session = aiobotocore.session.get_session()
+        async with session.create_client("ec2") as client:
+            await client.describe_instances()
+
+    asyncio.run(main())
+    ```
+  </Tab>
+</Tabs>
+
+**Thread context propagation for S3 multipart transfers**
+
+boto3's `upload_file` and `download_file` use background threads for multipart operations. Enable threading instrumentation alongside botocore to propagate trace context into those threads:
+
+```python
+from opentelemetry.instrumentation.threading import ThreadingInstrumentor
+from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+
+ThreadingInstrumentor().instrument()
+BotocoreInstrumentor().instrument()
+```
+
+<Note>
+When using `opentelemetry-instrument` for auto-instrumentation, both instrumentors are enabled automatically if their packages are installed.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, str, str, dict], None]">
+  Callback invoked before an API call is made. Receives the active span, the service name (e.g., `"ec2"`), the operation name (e.g., `"DescribeInstances"`), and the API parameters dict.
+
+  ```python
+  def request_hook(span, service_name, operation_name, api_params):
+      span.set_attribute("custom.service", service_name)
+
+  BotocoreInstrumentor().instrument(request_hook=request_hook)
+  ```
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, str, str, dict], None]">
+  Callback invoked after an API call completes. Receives the active span, the service name, the operation name, and the parsed API result dict.
+
+  ```python
+  def response_hook(span, service_name, operation_name, result):
+      span.set_attribute("custom.result_keys", list(result.keys()))
+
+  BotocoreInstrumentor().instrument(response_hook=response_hook)
+  ```
+</ParamField>
+
+<ParamField path="propagator" type="TextMapPropagator">
+  Custom propagator for injecting trace context into AWS requests. Defaults to `AwsXRayPropagator`.
+</ParamField>
+
+### Service extensions
+
+The instrumentation includes built-in extensions that enrich spans for specific AWS services:
+
+| Service | Extension coverage |
+|---|---|
+| **Bedrock Runtime** | `Converse`, `ConverseStream`, `InvokeModel`, `InvokeModelWithResponseStream` — implements GenAI semantic conventions including tracing, events, and metrics |
+| **DynamoDB** | Table name, consumed capacity, and other DynamoDB-specific attributes |
+| **Lambda** | Invoked function name and qualifier |
+| **SNS** | Topic ARN, message ID |
+| **SQS** | Queue URL, message IDs |
+
+<Note>
+Bedrock Runtime support is available for botocore only (not aiobotocore). `InvokeModel` and `InvokeModelWithResponseStream` support a subset of models: Amazon Titan, Amazon Nova, and Anthropic Claude. Tool call tracing is supported for Amazon Nova and Anthropic Claude 3+.
+</Note>
+
+## Spans produced
+
+Each AWS API call produces one **client** span.
+
+| Attribute | Description |
+|---|---|
+| `rpc.system` | Always `"aws-api"` |
+| `rpc.service` | AWS service name (e.g., `"EC2"`, `"S3"`) |
+| `rpc.method` | AWS operation name (e.g., `"DescribeInstances"`) |
+| `cloud.region` | AWS region of the client |
+| `http.status_code` | HTTP status code from the API response |
+
+Service extensions may add additional attributes. For example, Bedrock Runtime adds `gen_ai.*` attributes following the GenAI semantic conventions.
+
+## Supported versions
+
+| Package | Requirement |
+|---|---|
+| `botocore` | `~= 1.0` |
+| `aiobotocore` | `~= 2.0` |

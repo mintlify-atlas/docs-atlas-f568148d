@@ -1,0 +1,203 @@
+---
+title: "gRPC"
+description: "OpenTelemetry instrumentation for gRPC Python, with separate instrumentors for client and server."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-grpc
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` CLI to instrument without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+The package provides four instrumentor classes covering both sync and async (grpc.aio) variants:
+
+| Instrumentor | Instruments |
+|---|---|
+| `GrpcInstrumentorClient` | `grpc.insecure_channel` / `grpc.secure_channel` |
+| `GrpcInstrumentorServer` | `grpc.server` |
+| `GrpcAioInstrumentorClient` | `grpc.aio.insecure_channel` / `grpc.aio.secure_channel` |
+| `GrpcAioInstrumentorServer` | `grpc.aio.server` |
+
+<Tabs>
+  <Tab title="Client">
+    ```python
+    import grpc
+    from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
+
+    GrpcInstrumentorClient().instrument()
+
+    with grpc.insecure_channel("localhost:50051") as channel:
+        stub = helloworld_pb2_grpc.GreeterStub(channel)
+        response = stub.SayHello(helloworld_pb2.HelloRequest(name="YOU"))
+    ```
+
+    You can also add the interceptor manually without using the global instrumentor:
+
+    ```python
+    from opentelemetry.instrumentation.grpc import client_interceptor
+    from opentelemetry.instrumentation.grpc.grpcext import intercept_channel
+
+    channel = grpc.insecure_channel("localhost:50051")
+    channel = intercept_channel(channel, client_interceptor())
+    ```
+  </Tab>
+  <Tab title="Server">
+    ```python
+    import grpc
+    from concurrent import futures
+    from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer
+
+    GrpcInstrumentorServer().instrument()
+
+    server = grpc.server(futures.ThreadPoolExecutor())
+    helloworld_pb2_grpc.add_GreeterServicer_to_server(Greeter(), server)
+    server.add_insecure_port("[::]:50051")
+    server.start()
+    server.wait_for_termination()
+    ```
+
+    You can also add the interceptor manually:
+
+    ```python
+    from opentelemetry.instrumentation.grpc import server_interceptor
+
+    server = grpc.server(
+        futures.ThreadPoolExecutor(),
+        interceptors=[server_interceptor()],
+    )
+    ```
+  </Tab>
+  <Tab title="Async client (grpc.aio)">
+    ```python
+    import asyncio
+    import grpc
+    from opentelemetry.instrumentation.grpc import GrpcAioInstrumentorClient
+
+    GrpcAioInstrumentorClient().instrument()
+
+    async def run():
+        async with grpc.aio.insecure_channel("localhost:50051") as channel:
+            stub = helloworld_pb2_grpc.GreeterStub(channel)
+            response = await stub.SayHello(helloworld_pb2.HelloRequest(name="YOU"))
+
+    asyncio.run(run())
+    ```
+
+    You can also inject interceptors directly using `aio_client_interceptors`:
+
+    ```python
+    from opentelemetry.instrumentation.grpc import aio_client_interceptors
+
+    async with grpc.aio.insecure_channel(
+        "localhost:50051",
+        interceptors=aio_client_interceptors(),
+    ) as channel:
+        ...
+    ```
+  </Tab>
+  <Tab title="Async server (grpc.aio)">
+    ```python
+    import asyncio
+    import grpc
+    from opentelemetry.instrumentation.grpc import GrpcAioInstrumentorServer
+
+    GrpcAioInstrumentorServer().instrument()
+
+    async def serve():
+        server = grpc.aio.server()
+        helloworld_pb2_grpc.add_GreeterServicer_to_server(Greeter(), server)
+        server.add_insecure_port("[::]:50051")
+        await server.start()
+        await server.wait_for_termination()
+
+    asyncio.run(serve())
+    ```
+
+    Manual interceptor:
+
+    ```python
+    from opentelemetry.instrumentation.grpc import aio_server_interceptor
+
+    server = grpc.aio.server(interceptors=[aio_server_interceptor()])
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="filter_" type="Callable[[object], bool]">
+  A filter function that returns `True` for requests that should be instrumented. Use the helpers in `opentelemetry.instrumentation.grpc.filters` to compose filters.
+
+  ```python
+  from opentelemetry.instrumentation.grpc import GrpcInstrumentorServer, filters
+
+  GrpcInstrumentorServer(
+      filter_=filters.any_of(
+          filters.method_name("SimpleMethod"),
+          filters.method_name("ComplexMethod"),
+      )
+  ).instrument()
+  ```
+</ParamField>
+
+<ParamField path="request_hook" type="Callable" >
+  (`GrpcInstrumentorClient` / `GrpcAioInstrumentorClient` only) Callback invoked after a span is created for a client request.
+</ParamField>
+
+<ParamField path="response_hook" type="Callable">
+  (`GrpcInstrumentorClient` / `GrpcAioInstrumentorClient` only) Callback invoked before a span ends after receiving a response.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_GRPC_EXCLUDED_SERVICES` | Comma-delimited list of gRPC service names to exclude from instrumentation (e.g., `"GRPCHealthServer,GRPCTestServer"`). |
+
+### Available filters
+
+The `opentelemetry.instrumentation.grpc.filters` module provides composable filter helpers:
+
+| Filter | Description |
+|---|---|
+| `method_name(name)` | Match requests by RPC method name |
+| `method_prefix(prefix)` | Match by method name prefix |
+| `service_name(name)` | Match by service name |
+| `health_check()` | Match gRPC health check requests |
+| `any_of(*filters)` | Match if any filter matches (OR) |
+| `negate(filter_)` | Invert a filter |
+
+## Spans produced
+
+**Client spans** (`SpanKind.CLIENT`) are created for each outgoing RPC call.
+
+**Server spans** (`SpanKind.SERVER`) are created for each incoming RPC call.
+
+| Attribute | Description |
+|---|---|
+| `rpc.system` | Always `"grpc"` |
+| `rpc.service` | Fully qualified gRPC service name |
+| `rpc.method` | gRPC method name |
+| `rpc.grpc.status_code` | gRPC status code integer |
+| `net.peer.ip` | Remote IP (client spans) |
+| `net.peer.port` | Remote port (client spans) |
+
+## Supported versions
+
+Requires `grpcio >= 1.42.0`.

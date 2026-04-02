@@ -1,0 +1,100 @@
+---
+title: "Pyramid"
+description: "OpenTelemetry instrumentation for Pyramid — traces HTTP requests and responses automatically."
+---
+
+Instruments Pyramid applications by injecting a tracing tween into the Pyramid configuration, recording server spans for every incoming HTTP request.
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-pyramid
+```
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles this automatically.
+
+```bash
+opentelemetry-instrument pserve development.ini
+```
+
+### Manual instrumentation
+
+There are two approaches: instrument all `Configurator` instances globally, or instrument a specific `Configurator`.
+
+<Tabs>
+  <Tab title="Instrument all configurators">
+    ```python
+    from pyramid.config import Configurator
+    from opentelemetry.instrumentation.pyramid import PyramidInstrumentor
+
+    # Patches Configurator.__init__ — call before creating any Configurator
+    PyramidInstrumentor().instrument()
+
+    config = Configurator()
+    config.add_route("index", "/")
+    app = config.make_wsgi_app()
+    ```
+  </Tab>
+  <Tab title="Instrument one configurator">
+    ```python
+    from pyramid.config import Configurator
+    from opentelemetry.instrumentation.pyramid import PyramidInstrumentor
+
+    config = Configurator()
+    PyramidInstrumentor().instrument_config(config)
+
+    config.add_route("index", "/")
+    app = config.make_wsgi_app()
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  If you use `instrument_config` and also set the `pyramid.tweens` setting manually, you must explicitly include `opentelemetry.instrumentation.pyramid.trace_tween_factory` in the tweens list.
+</Note>
+
+## Configuration
+
+`PyramidInstrumentor().instrument()` accepts the following keyword arguments:
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_PYRAMID_EXCLUDED_URLS` | Comma-delimited URL regex exclusion list. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+### Disabling per-route
+
+Set the `opentelemetry_trace_enabled` key to `False` in the Pyramid settings to disable tracing entirely:
+
+```python
+config = Configurator(settings={"opentelemetry_trace_enabled": False})
+```
+
+## Spans produced
+
+A single server span is created per HTTP request with kind `SERVER`. The span name is the HTTP method and matched route pattern, e.g. `GET /api/users/{id}`. Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.route`
+- `http.status_code` / `http.response.status_code`
+- `http.scheme`
+- `http.host`
+- `http.target`
+- `http.user_agent`
+- `http.flavor`
+
+## Supported versions
+
+Requires `pyramid >= 1.7`.

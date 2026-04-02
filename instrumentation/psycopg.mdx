@@ -1,0 +1,197 @@
+---
+title: "psycopg / psycopg2"
+description: "OpenTelemetry instrumentation for psycopg (v3) and psycopg2 PostgreSQL drivers."
+---
+
+This page covers two separate packages: **psycopg** (v3) and **psycopg2**. Both instrument
+PostgreSQL connections and produce equivalent spans, but they target different library versions
+and expose different instrumentor class names.
+
+<Tabs>
+  <Tab title="psycopg (v3)">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-psycopg
+```
+
+## Usage
+
+### Auto-instrumentation
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Instrument all connections globally:**
+
+```python
+import psycopg
+from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
+
+PsycopgInstrumentor().instrument()
+
+cnx = psycopg.connect(database="mydb")
+cursor = cnx.cursor()
+cursor.execute("SELECT 1")
+```
+
+**Instrument a single connection:**
+
+```python
+import psycopg
+from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
+
+cnx = psycopg.connect(database="mydb")
+instrumented_cnx = PsycopgInstrumentor().instrument_connection(cnx)
+cursor = instrumented_cnx.cursor()
+cursor.execute("SELECT 1")
+```
+
+Both `psycopg.Connection` (sync) and `psycopg.AsyncConnection` (async) are instrumented.
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="enable_commenter" type="boolean" default="False">
+  Enable SQLcommenter, appending OpenTelemetry context to each query as a SQL comment.
+  For example: `SELECT 1; /*traceparent='00-abc...-01'*/`.
+</ParamField>
+
+<ParamField path="commenter_options" type="object" default="{}">
+  Opt out of specific SQLcommenter key-value pairs. Accepted keys:
+
+  | Key | Description |
+  |-----|-------------|
+  | `db_driver` | Driver name and version (e.g., `psycopg='3.1.9'`) |
+  | `dbapi_threadsafety` | DB-API threadsafety level |
+  | `dbapi_level` | DB-API level (e.g., `2.0`) |
+  | `driver_paramstyle` | DB-API paramstyle (e.g., `pyformat`) |
+  | `libpq_version` | PostgreSQL libpq version |
+  | `opentelemetry_values` | Traceparent propagation context |
+
+  Set a key to `False` to exclude it.
+</ParamField>
+
+<ParamField path="enable_attribute_commenter" type="boolean" default="False">
+  Also include the SQL comment in the `db.statement` span attribute.
+  Requires `enable_commenter=True`.
+</ParamField>
+
+<ParamField path="capture_parameters" type="boolean" default="False">
+  Capture query parameters in the `db.statement.parameters` span attribute.
+</ParamField>
+
+## Supported versions
+
+`psycopg >= 3.1.0`
+
+  </Tab>
+  <Tab title="psycopg2">
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-psycopg2
+```
+
+Install either `psycopg2` or `psycopg2-binary`:
+
+```bash
+pip install psycopg2-binary
+```
+
+## Usage
+
+### Auto-instrumentation
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Instrument all connections globally:**
+
+```python
+import psycopg2
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+
+Psycopg2Instrumentor().instrument()
+
+cnx = psycopg2.connect(database="mydb")
+cursor = cnx.cursor()
+cursor.execute("SELECT 1")
+```
+
+**Instrument a single connection:**
+
+```python
+import psycopg2
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+
+cnx = psycopg2.connect(database="mydb")
+instrumented_cnx = Psycopg2Instrumentor().instrument_connection(cnx)
+cursor = instrumented_cnx.cursor()
+cursor.execute("SELECT 1")
+```
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="enable_commenter" type="boolean" default="False">
+  Enable SQLcommenter. Appends OpenTelemetry context as a SQL comment.
+</ParamField>
+
+<ParamField path="commenter_options" type="object" default="{}">
+  Opt out of specific SQLcommenter key-value pairs. Accepted keys:
+
+  | Key | Description |
+  |-----|-------------|
+  | `db_driver` | Driver name and version (e.g., `psycopg2='2.9.3'`) |
+  | `dbapi_threadsafety` | DB-API threadsafety level |
+  | `dbapi_level` | DB-API level (e.g., `2.0`) |
+  | `driver_paramstyle` | DB-API paramstyle (e.g., `pyformat`) |
+  | `libpq_version` | PostgreSQL libpq version |
+  | `opentelemetry_values` | Traceparent propagation context |
+</ParamField>
+
+<ParamField path="enable_attribute_commenter" type="boolean" default="False">
+  Also include the SQL comment in the `db.statement` span attribute.
+  Requires `enable_commenter=True`.
+</ParamField>
+
+<ParamField path="capture_parameters" type="boolean" default="False">
+  Capture query parameters in the `db.statement.parameters` span attribute.
+</ParamField>
+
+## Supported versions
+
+`psycopg2 >= 2.7.3.1` or `psycopg2-binary >= 2.7.3.1`
+
+  </Tab>
+</Tabs>
+
+## Spans produced
+
+Both instrumentors produce equivalent spans on each cursor `execute`, `executemany`, and
+`callproc` call.
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Always `postgresql` |
+| `db.name` | The database name |
+| `db.statement` | The SQL statement |
+| `db.operation` | The SQL operation (e.g., `SELECT`, `INSERT`) |
+| `db.user` | The connected database user |
+| `net.peer.name` | PostgreSQL server hostname |
+| `net.peer.port` | PostgreSQL server port |

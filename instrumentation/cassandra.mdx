@@ -1,0 +1,80 @@
+---
+title: "Cassandra"
+description: "OpenTelemetry instrumentation for Cassandra and ScyllaDB."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-cassandra
+```
+
+Install the driver you are using:
+
+```bash
+pip install cassandra-driver   # Apache Cassandra
+# or
+pip install scylla-driver      # ScyllaDB
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+```python
+import cassandra.cluster
+from opentelemetry.instrumentation.cassandra import CassandraInstrumentor
+
+CassandraInstrumentor().instrument()
+
+cluster = cassandra.cluster.Cluster()
+session = cluster.connect()
+rows = session.execute("SELECT * FROM my_keyspace.my_table")
+```
+
+<Note>
+  `CassandraInstrumentor` wraps `cassandra.cluster.Session.execute_async`. It supports both
+  `cassandra-driver` and the ScyllaDB fork `scylla-driver` — the correct dependency is
+  detected automatically at import time.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="include_db_statement" type="boolean" default="False">
+  When `True`, the CQL query string is captured in the `db.statement` span attribute.
+</ParamField>
+
+### Example with statement capture
+
+```python
+from opentelemetry.instrumentation.cassandra import CassandraInstrumentor
+
+CassandraInstrumentor().instrument(include_db_statement=True)
+```
+
+## Spans produced
+
+One span named `Cassandra` is created per `Session.execute_async` call.
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Always `cassandra` |
+| `db.name` | The active keyspace |
+| `db.statement` | The CQL query string (only when `include_db_statement=True`) |
+| `net.peer.name` | Cluster contact points |
+
+## Supported versions
+
+`cassandra-driver ~= 3.25` or `scylla-driver ~= 3.25`

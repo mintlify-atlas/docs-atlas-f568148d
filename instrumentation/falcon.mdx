@@ -1,0 +1,110 @@
+---
+title: "Falcon"
+description: "OpenTelemetry instrumentation for Falcon — traces HTTP requests and responses automatically."
+---
+
+Builds on the OpenTelemetry WSGI middleware to trace web requests in Falcon applications, using the matched resource and method as the span name and setting the `http.route` attribute.
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-falcon
+```
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles this automatically.
+
+```bash
+opentelemetry-instrument gunicorn myapp:app
+```
+
+### Manual instrumentation
+
+```python
+import falcon
+from opentelemetry.instrumentation.falcon import FalconInstrumentor
+
+FalconInstrumentor().instrument()
+
+app = falcon.App()
+
+class HelloWorldResource:
+    def on_get(self, req, resp):
+        resp.text = "Hello World"
+
+app.add_route("/hello", HelloWorldResource())
+```
+
+<Note>
+  `FalconInstrumentor().instrument()` must be called before `falcon.App()` (or `falcon.API()` for Falcon 1/2) is instantiated.
+</Note>
+
+## Configuration
+
+<ParamField path="request_hook" type="callable">
+  Called right after a span is created for a request. Receives `(span, req)` where `req` is a `falcon.Request`.
+</ParamField>
+
+<ParamField path="response_hook" type="callable">
+  Called right before the span is finished. Receives `(span, req, resp)` where `resp` is a `falcon.Response`.
+</ParamField>
+
+<ParamField path="traced_request_attributes" type="string[]">
+  List of `falcon.Request` attribute names to extract and attach as span attributes. Overrides `OTEL_PYTHON_FALCON_TRACED_REQUEST_ATTRS`.
+</ParamField>
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Optional meter provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_FALCON_EXCLUDED_URLS` | Comma-delimited URL regex exclusion list. |
+| `OTEL_PYTHON_FALCON_TRACED_REQUEST_ATTRS` | Comma-delimited list of `falcon.Request` attributes to attach as span attributes (e.g. `query_string,uri_template`). |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+### Hooks example
+
+```python
+from opentelemetry.instrumentation.falcon import FalconInstrumentor
+
+def request_hook(span, req):
+    if span and span.is_recording():
+        span.set_attribute("custom.client_ip", req.remote_addr)
+
+def response_hook(span, req, resp):
+    if span and span.is_recording():
+        span.set_attribute("custom.media_type", resp.content_type)
+
+FalconInstrumentor().instrument(
+    request_hook=request_hook,
+    response_hook=response_hook,
+)
+```
+
+## Spans produced
+
+A single server span is created per HTTP request with kind `SERVER`. After the matched resource is resolved, the span is renamed to `{METHOD} {uri_template}`, e.g. `GET /users/{user_id}`. Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.route`
+- `http.status_code` / `http.response.status_code`
+- `http.scheme`
+- `http.host`
+- `http.target`
+- `falcon.resource` (the matched resource class name)
+
+## Supported versions
+
+Requires `falcon >= 1.4.1, < 5.0.0`. Supports Falcon 1, 2, and 3.

@@ -1,0 +1,168 @@
+---
+title: 'Custom distro'
+description: 'Create a custom OpenTelemetry distribution to standardize SDK configuration across your organization.'
+keywords: ['distro', 'distribution', 'custom', 'BaseDistro', 'BaseConfigurator', 'configuration']
+---
+
+A **distro** (distribution) is a package that configures the OpenTelemetry SDK on behalf of users before any instrumentation runs. It provides a central place to set opinionated defaults — such as which exporters to use, which propagators to enable, and how individual instrumentors should be loaded — so application teams do not have to repeat that setup in every service.
+
+## What `opentelemetry-distro` provides
+
+The `opentelemetry-distro` package ships the default distro used by `opentelemetry-instrument`. Its `OpenTelemetryDistro._configure()` method sets the following environment variable defaults when they are not already set:
+
+| Variable | Default value |
+|---|---|
+| `OTEL_TRACES_EXPORTER` | `otlp` |
+| `OTEL_METRICS_EXPORTER` | `otlp` |
+| `OTEL_LOGS_EXPORTER` | `otlp` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` |
+
+It also registers an `OpenTelemetryConfigurator` that drives SDK initialization (tracer provider, meter provider, log provider) based on the active environment variables.
+
+Install the default distro with OTLP support:
+
+```bash
+pip install "opentelemetry-distro[otlp]"
+```
+
+## When to create a custom distro
+
+You should create a custom distro when you need to:
+
+- Enforce organization-wide exporter or propagator defaults across many services.
+- Pass custom arguments to specific instrumentors (e.g., a per-request hook or a custom sampler).
+- Skip or replace certain instrumentors for services where the default behavior is incorrect.
+- Bundle your own SDK configurator alongside your distro package.
+
+## Creating a custom distro
+
+Subclass `BaseDistro` from `opentelemetry.instrumentation.distro` and implement `_configure()`. This method is called before any instrumentors are loaded, making it the right place to set environment variable defaults or perform SDK pre-configuration.
+
+```python
+# src/my_company_distro/__init__.py
+import os
+from opentelemetry.instrumentation.distro import BaseDistro
+from opentelemetry.instrumentation.instrumentor import BaseInstrumentor
+from opentelemetry.util._importlib_metadata import EntryPoint
+
+
+class MyCompanyDistro(BaseDistro):
+    """
+    Company-wide OpenTelemetry distro. Sets default exporters and
+    allows per-instrumentor customization via load_instrumentor.
+    """
+
+    def _configure(self, **kwargs):
+        # Set defaults only if the user has not already configured them.
+        os.environ.setdefault("OTEL_TRACES_EXPORTER", "otlp")
+        os.environ.setdefault("OTEL_METRICS_EXPORTER", "otlp")
+        os.environ.setdefault("OTEL_LOGS_EXPORTER", "otlp")
+        os.environ.setdefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
+        os.environ.setdefault(
+            "OTEL_EXPORTER_OTLP_ENDPOINT", "http://internal-collector:4317"
+        )
+
+    def load_instrumentor(self, entry_point: EntryPoint, **kwargs):
+        """
+        Optionally customize how each instrumentor is loaded.
+        Called once per opentelemetry_instrumentor entry point.
+        """
+        instrumentor: BaseInstrumentor = entry_point.load()
+        instrumentor().instrument(**kwargs)
+```
+
+<Note>
+  `BaseDistro` is a singleton — only one instance of each distro class is created per process. Its `configure()` method delegates to `_configure()`, which you must implement.
+</Note>
+
+## Creating a custom configurator
+
+A configurator initializes the OpenTelemetry SDK providers (tracer, meter, logger). The default `OpenTelemetryConfigurator` from `opentelemetry-distro` is sufficient for most cases, but you can create your own if you need full control over SDK construction.
+
+Subclass `_OTelSDKConfigurator` (or a plain `ABC`-based class that implements `configure()`) and register it as a separate entry point.
+
+```python
+# src/my_company_distro/configurator.py
+from opentelemetry.sdk._configuration import _OTelSDKConfigurator
+
+
+class MyCompanyConfigurator(_OTelSDKConfigurator):
+    """
+    Extends the default SDK configurator. Override _configure() to
+    run custom SDK initialization logic after the standard setup.
+    """
+
+    def _configure(self, **kwargs):
+        # Run the standard configurator first.
+        super()._configure(**kwargs)
+        # Add custom post-configuration here.
+```
+
+## Registering via entry points
+
+Auto-instrumentation discovers distros and configurators through Python package entry points. Register your classes in `pyproject.toml`:
+
+```toml
+[project.entry-points.opentelemetry_distro]
+my_company = "my_company_distro:MyCompanyDistro"
+
+[project.entry-points.opentelemetry_configurator]
+my_company = "my_company_distro.configurator:MyCompanyConfigurator"
+```
+
+<Steps>
+  <Step title="Define the entry points">
+    Add the `[project.entry-points.opentelemetry_distro]` and `[project.entry-points.opentelemetry_configurator]` sections to your `pyproject.toml` as shown above. The key (e.g., `my_company`) becomes the entry point name referenced by `OTEL_PYTHON_DISTRO` and `OTEL_PYTHON_CONFIGURATOR`.
+  </Step>
+  <Step title="Install your package">
+    Install your distro package into the same Python environment as the application:
+
+    ```bash
+    pip install ./my-company-distro
+    ```
+  </Step>
+  <Step title="Run with your distro">
+    `opentelemetry-instrument` will automatically discover and use your distro if it is the only one installed. If multiple distros are present, select yours explicitly:
+
+    ```bash
+    OTEL_PYTHON_DISTRO=my_company \
+    OTEL_PYTHON_CONFIGURATOR=my_company \
+    opentelemetry-instrument python app.py
+    ```
+  </Step>
+</Steps>
+
+## Selecting a distro at runtime
+
+<ParamField query="OTEL_PYTHON_DISTRO" type="string">
+  Entry point name of the distro to activate. When this is not set, `opentelemetry-instrument` uses the first `opentelemetry_distro` entry point it discovers. Set it explicitly when multiple distros are installed.
+
+  ```bash
+  OTEL_PYTHON_DISTRO=my_company opentelemetry-instrument python app.py
+  ```
+</ParamField>
+
+<ParamField query="OTEL_PYTHON_CONFIGURATOR" type="string">
+  Entry point name of the configurator to run. When multiple `opentelemetry_configurator` entry points are installed, only the first matching one is used; the rest are skipped with a warning.
+
+  ```bash
+  OTEL_PYTHON_CONFIGURATOR=my_company opentelemetry-instrument python app.py
+  ```
+</ParamField>
+
+<Warning>
+  If your environment contains entry points for multiple distros or configurators and you do not set these variables, the one that happens to be discovered first will be used. Always set both variables in multi-distro environments to ensure deterministic behavior.
+</Warning>
+
+## setup.cfg equivalent
+
+If your package uses `setup.cfg` instead of `pyproject.toml`, register entry points as follows:
+
+```ini
+[options.entry_points]
+opentelemetry_distro =
+    my_company = my_company_distro:MyCompanyDistro
+
+opentelemetry_configurator =
+    my_company = my_company_distro.configurator:MyCompanyConfigurator
+```

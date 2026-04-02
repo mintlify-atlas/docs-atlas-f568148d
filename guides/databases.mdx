@@ -1,0 +1,152 @@
+---
+title: "Database Instrumentation"
+description: "Automatically instrument SQL and NoSQL database clients in Python with OpenTelemetry."
+---
+
+OpenTelemetry Python Contrib provides instrumentation for a wide range of database drivers and ORMs. Each package creates spans for database operations and records standard semantic convention attributes such as `db.system`, `db.statement`, and `db.name`.
+
+## Supported Databases
+
+<CardGroup cols={2}>
+  <Card title="SQLAlchemy" href="/instrumentation/sqlalchemy">
+    `opentelemetry-instrumentation-sqlalchemy`
+    Supports: `sqlalchemy >= 1.0.0, < 2.1.0` | Metrics: Yes | Semconv: migration
+  </Card>
+  <Card title="Redis" href="/instrumentation/redis">
+    `opentelemetry-instrumentation-redis`
+    Supports: `redis >= 2.6` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="PyMongo" href="/instrumentation/pymongo">
+    `opentelemetry-instrumentation-pymongo`
+    Supports: `pymongo >= 3.1, < 5.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="Elasticsearch" href="/instrumentation/elasticsearch">
+    `opentelemetry-instrumentation-elasticsearch`
+    Supports: `elasticsearch >= 6.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="psycopg (v3)" href="/instrumentation/psycopg">
+    `opentelemetry-instrumentation-psycopg`
+    Supports: `psycopg >= 3.1.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="psycopg / psycopg2" href="/instrumentation/psycopg">
+    `opentelemetry-instrumentation-psycopg` / `psycopg2`
+    Supports: `psycopg >= 3.1.0`, `psycopg2 >= 2.7.3.1` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="Cassandra" href="/instrumentation/cassandra">
+    `opentelemetry-instrumentation-cassandra`
+    Supports: `cassandra-driver ~= 3.25`, `scylla-driver ~= 3.25` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="aiopg / asyncpg" href="/instrumentation/psycopg">
+    `opentelemetry-instrumentation-aiopg` / `asyncpg`
+    Supports: `aiopg >= 0.13.0`, `asyncpg >= 0.12.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="MySQL (connector / PyMySQL / mysqlclient)" href="/instrumentation/sqlalchemy">
+    `opentelemetry-instrumentation-mysql` / `pymysql` / `mysqlclient`
+    All support the DB-API 2.0 interface; use with SQLAlchemy for full tracing.
+  </Card>
+  <Card title="pymemcache / sqlite3 / pymssql / TortoiseORM" href="/instrumentation/sqlalchemy">
+    Additional drivers: `opentelemetry-instrumentation-pymemcache`, `sqlite3`, `pymssql`, `tortoiseorm`
+    Install each separately; usage follows the same `Instrumentor().instrument()` pattern.
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Tabs>
+  <Tab title="SQLAlchemy">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-sqlalchemy
+        ```
+      </Step>
+      <Step title="Instrument a synchronous engine">
+        Pass your engine instance to `SQLAlchemyInstrumentor`. All SQL operations executed through this engine will produce spans.
+
+        ```python
+        from sqlalchemy import create_engine
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+        engine = create_engine("postgresql+psycopg2://user:pass@localhost/mydb")
+        SQLAlchemyInstrumentor().instrument(engine=engine)
+
+        with engine.connect() as conn:
+            result = conn.execute("SELECT 1")
+        ```
+      </Step>
+      <Step title="Instrument an async engine">
+        For async SQLAlchemy, pass the underlying sync engine:
+
+        ```python
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+        engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/mydb")
+        SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+        ```
+      </Step>
+      <Step title="Optional: enable SQLCommenter">
+        SQLCommenter appends trace context as a comment to outgoing SQL, enabling correlation between database logs and traces:
+
+        ```python
+        SQLAlchemyInstrumentor().instrument(
+            engine=engine,
+            enable_commenter=True,
+        )
+        # Resulting query: SELECT 1 /*traceparent='00-abc...-01'*/
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Redis">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-redis
+        ```
+      </Step>
+      <Step title="Instrument the Redis client">
+        `RedisInstrumentor` patches the `redis` library globally so that all client instances are traced.
+
+        ```python
+        import redis
+        from opentelemetry.instrumentation.redis import RedisInstrumentor
+
+        RedisInstrumentor().instrument()
+
+        client = redis.Redis(host="localhost", port=6379)
+        client.set("key", "value")
+        value = client.get("key")
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## DB Span Attributes
+
+Spans produced by database instrumentation packages follow the [OpenTelemetry Database Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/database/). Common attributes include:
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `db.system` | Database system identifier | `postgresql`, `redis`, `mongodb` |
+| `db.statement` | SQL or query statement | `SELECT * FROM users WHERE id = ?` |
+| `db.name` | Name of the database | `mydb` |
+| `db.operation` | Operation name | `SELECT`, `INSERT`, `GET` |
+| `server.address` | Database host | `localhost` |
+| `server.port` | Database port | `5432` |
+
+<Note>
+  `db.statement` capture may be disabled by default in some instrumentations for security reasons. Check the individual reference page for configuration options.
+</Note>
+
+## Reference Pages
+
+| Database | Reference |
+|----------|-----------|
+| SQLAlchemy | [/instrumentation/sqlalchemy](/instrumentation/sqlalchemy) |
+| Redis | [/instrumentation/redis](/instrumentation/redis) |
+| PyMongo | [/instrumentation/pymongo](/instrumentation/pymongo) |
+| Elasticsearch | [/instrumentation/elasticsearch](/instrumentation/elasticsearch) |
+| psycopg (v3) + psycopg2 | [/instrumentation/psycopg](/instrumentation/psycopg) |
+| Cassandra | [/instrumentation/cassandra](/instrumentation/cassandra) |

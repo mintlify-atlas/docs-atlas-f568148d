@@ -1,0 +1,103 @@
+---
+title: "AWS Lambda"
+description: "OpenTelemetry instrumentation for Python AWS Lambda functions."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-aws-lambda
+```
+
+<Tip>
+If you are using the AWS Distro for OpenTelemetry (ADOT) Lambda layer, the instrumentation is configured automatically via the layer's init script. See the [ADOT Python Lambda layer documentation](https://aws-otel.github.io/docs/getting-started/lambda/lambda-python) for details.
+</Tip>
+
+## Usage
+
+### Auto-instrumentation
+
+The OTEL Lambda layer runs `AwsLambdaInstrumentor().instrument()` automatically via the `otel-instrument` wrapper script. You do not need to modify your handler code when using the layer.
+
+### Manual instrumentation
+
+Call `AwsLambdaInstrumentor().instrument()` at module load time, outside your handler function, so it is executed once per container lifecycle:
+
+```python
+import boto3
+from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
+from opentelemetry.instrumentation.aws_lambda import AwsLambdaInstrumentor
+
+# Instrument before the handler is invoked
+BotocoreInstrumentor().instrument()
+AwsLambdaInstrumentor().instrument()
+
+def lambda_handler(event, context):
+    s3 = boto3.resource("s3")
+    for bucket in s3.buckets.all():
+        print(bucket.name)
+    return "200 OK"
+```
+
+<Note>
+Place `AwsLambdaInstrumentor().instrument()` at the top level of your module so it runs during the cold start, not on every invocation.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Custom `MeterProvider` to use. Defaults to the global meter provider.
+</ParamField>
+
+<ParamField path="event_context_extractor" type="Callable[[Any], Context]">
+  A function that extracts an OTel `Context` from the Lambda event object. Use this to propagate trace context from custom event sources (e.g., SQS, EventBridge).
+
+  The default extractor reads W3C `traceparent` / `tracestate` headers from `event["headers"]`, which works for API Gateway proxy integrations.
+
+  ```python
+  from opentelemetry.instrumentation.aws_lambda import AwsLambdaInstrumentor
+  from opentelemetry.propagate import get_global_textmap
+
+  def custom_event_context_extractor(lambda_event):
+      # Extract context from a custom nested location
+      return get_global_textmap().extract(lambda_event["foo"]["headers"])
+
+  AwsLambdaInstrumentor().instrument(
+      event_context_extractor=custom_event_context_extractor
+  )
+  ```
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_INSTRUMENTATION_AWS_LAMBDA_FLUSH_TIMEOUT` | Milliseconds to wait for the span exporter to flush before the Lambda execution environment is frozen. Defaults to no timeout. |
+| `ORIG_HANDLER` | Set by the ADOT layer to point to your original handler. The layer replaces `_HANDLER` with its own wrapper. |
+
+## Spans produced
+
+`AwsLambdaInstrumentor` wraps your Lambda handler and creates one **server** span per invocation.
+
+| Attribute | Description |
+|---|---|
+| `faas.invocation_id` | `context.aws_request_id` — unique invocation identifier |
+| `faas.trigger` | Trigger type, e.g., `"http"` for API Gateway events |
+| `cloud.account.id` | AWS account ID parsed from the function ARN |
+| `cloud.resource_id` | Full function ARN |
+| `http.method` | HTTP method for API Gateway trigger events |
+| `http.route` | API Gateway resource path |
+| `http.scheme` | URL scheme (`http` or `https`) |
+| `http.target` | Request path and query string |
+| `http.status_code` | HTTP status returned by the handler |
+| `http.user_agent` | Value of the `User-Agent` header |
+
+The parent context is determined by inspecting the Lambda event (via `event_context_extractor`) first, then falling back to the `_X_AMZN_TRACE_ID` environment variable (X-Ray active tracing).
+
+## Supported versions
+
+The instrumentation has no required Python package dependencies beyond the OpenTelemetry SDK. It instruments any Python Lambda handler.

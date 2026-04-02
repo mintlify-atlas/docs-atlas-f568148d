@@ -1,0 +1,159 @@
+---
+title: "Requests"
+description: "OpenTelemetry instrumentation for the Python requests library."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-requests
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` CLI to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+Call `RequestsInstrumentor().instrument()` before any requests are made. All calls through `requests.get`, `requests.post`, and the underlying `Session.send` are automatically traced.
+
+```python
+import requests
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+RequestsInstrumentor().instrument()
+
+response = requests.get("https://www.example.org/")
+```
+
+You can also instrument or uninstrument a specific session:
+
+```python
+from requests import Session
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+RequestsInstrumentor().instrument()
+
+session = Session()
+# Later, to stop tracing this specific session:
+RequestsInstrumentor.uninstrument_session(session)
+```
+
+To stop all instrumentation:
+
+```python
+RequestsInstrumentor().uninstrument()
+```
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Custom `TracerProvider` to use. Defaults to the global tracer provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Custom `MeterProvider` to use. Defaults to the global meter provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, PreparedRequest], None]">
+  Callback invoked right after a span is created for a request. Receives the active span and a `requests.PreparedRequest` object.
+
+  ```python
+  def request_hook(span, request_obj):
+      span.set_attribute("custom.attr", request_obj.url)
+
+  RequestsInstrumentor().instrument(request_hook=request_hook)
+  ```
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, PreparedRequest, Response], None]">
+  Callback invoked right before a span is finished. Receives the span, a `requests.PreparedRequest`, and a `requests.Response`.
+
+  ```python
+  def response_hook(span, request_obj, response):
+      span.set_attribute("http.response_size", len(response.content))
+
+  RequestsInstrumentor().instrument(response_hook=response_hook)
+  ```
+</ParamField>
+
+<ParamField path="excluded_urls" type="string">
+  Comma-delimited list of URL regexes to exclude from tracing. Overrides the environment variable at call time.
+
+  ```python
+  RequestsInstrumentor().instrument(excluded_urls="healthcheck,client/.*/info")
+  ```
+</ParamField>
+
+<ParamField path="duration_histogram_boundaries" type="list[float]">
+  Explicit bucket boundaries for the HTTP client duration histogram.
+
+  ```python
+  RequestsInstrumentor().instrument(
+      duration_histogram_boundaries=[0.0, 5.0, 10.0, 25.0, 50.0, 100.0]
+  )
+  ```
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_REQUESTS_EXCLUDED_URLS` | Comma-delimited regexes of URLs to exclude. Falls back to `OTEL_PYTHON_EXCLUDED_URLS`. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_REQUEST` | Comma-delimited list of request header names to capture as span attributes. Regexes are supported. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_RESPONSE` | Comma-delimited list of response header names to capture as span attributes. Regexes are supported. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Comma-delimited list of header names whose values are replaced with `[REDACTED]`. |
+
+<Note>
+Header capture environment variable names are still experimental and may change in a future release.
+</Note>
+
+**Excluding URLs example:**
+
+```bash
+export OTEL_PYTHON_REQUESTS_EXCLUDED_URLS="client/.*/info,healthcheck"
+```
+
+This excludes URLs such as `https://site/client/123/info` and `https://site/xyz/healthcheck`.
+
+**Capturing headers example:**
+
+```bash
+export OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_REQUEST="content-type,x-request-id"
+export OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_CLIENT_RESPONSE="content-type,x-response-id"
+```
+
+Captured headers appear as span attributes in the format `http.request.header.<header_name>` and `http.response.header.<header_name>`, with the header name lowercased and hyphens replaced by underscores.
+
+## Spans produced
+
+`RequestsInstrumentor` creates one **client** span per HTTP request sent through `requests.Session.send`.
+
+| Attribute | Description |
+|---|---|
+| `http.method` / `http.request.method` | HTTP method (e.g., `GET`, `POST`) |
+| `http.url` / `url.full` | Full request URL (credentials redacted) |
+| `http.status_code` / `http.response.status_code` | HTTP response status code |
+| `http.flavor` / `network.protocol.version` | HTTP protocol version (e.g., `1.1`) |
+| `net.peer.name` / `server.address` | Hostname of the target server |
+| `net.peer.port` / `server.port` | Port of the target server |
+| `network.peer.address` | IP address of the connected peer |
+| `network.peer.port` | Port of the connected peer |
+| `error.type` | Exception class name, set on network errors |
+| `user_agent.original` | Value of the `User-Agent` request header |
+
+<Note>
+Attribute names depend on the active semantic convention stability mode. Both old (`http.method`) and new (`http.request.method`) names are listed above. Use the `OTEL_SEMCONV_STABILITY_OPT_IN` environment variable to control which set is emitted.
+</Note>
+
+The instrumentation also records an `http.client.duration` (milliseconds, old semconv) or `http.client.request.duration` (seconds, new semconv) histogram metric.
+
+## Supported versions
+
+Requires `requests ~= 2.0`.

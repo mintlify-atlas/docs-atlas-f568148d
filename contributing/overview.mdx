@@ -1,0 +1,77 @@
+---
+title: "Contributing"
+description: "How to contribute to OpenTelemetry Python Contrib — setup, workflow, and community."
+---
+
+Contributions are welcome. This guide covers how to get your local environment set up, run tests, and submit a pull request.
+
+## Find a buddy
+
+If you're new, post in the [#otel-python](https://cloud-native.slack.com/archives/C01PD4HUVBL) Slack channel. Introduce yourself, mention the area you're interested in, and ask for a buddy. A buddy will help you find a good first issue, review your PR, and answer questions.
+
+Join Slack at [slack.cncf.io](https://slack.cncf.io).
+
+## Development setup
+
+<Steps>
+  <Step title="Prerequisites">
+    Install Python 3.9+ and [uv](https://docs.astral.sh/uv/) (the workspace package manager):
+    ```bash
+    pip install uv
+    ```
+  </Step>
+  <Step title="Clone the repo">
+    ```bash
+    git clone https://github.com/open-telemetry/opentelemetry-python-contrib
+    cd opentelemetry-python-contrib
+    ```
+  </Step>
+  <Step title="Install dev dependencies">
+    ```bash
+    uv sync
+    ```
+  </Step>
+  <Step title="Run tests for a specific instrumentation">
+    Tests are run via tox. For example, to test the Flask instrumentation against Python 3.9:
+    ```bash
+    tox -e py39-test-instrumentation-flask
+    ```
+    To list all available tox environments:
+    ```bash
+    tox list
+    ```
+  </Step>
+</Steps>
+
+## Running linting
+
+The project uses `ruff` for linting and `pre-commit` for hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+## Pull request workflow
+
+1. **Sign the CLA** — you must sign the [Linux Foundation CLA](https://docs.linuxfoundation.org/lfx/easycla/contributors) before your PR can be merged.
+2. **Create a branch** from `main`.
+3. **Write tests** — all new instrumentation must include unit tests covering supported library versions.
+4. **Update the CHANGELOG** — add an entry under the appropriate package.
+5. **Open the PR** against `main`. Reference any related issues.
+6. **Respond to review** — maintainers will review within a few days. Use the weekly meeting or Slack if you need a faster response.
+
+## Weekly SIG meeting
+
+The Python SIG meets every **Thursday at 9 AM PT**. Check the [OpenTelemetry community calendar](https://calendar.google.com/calendar/embed?src=c_2bf73e3b6b530da4babd444e72b76a6ad893a5c3f43cf40467abc7a9a897f977%40group.calendar.google.com) for Zoom details.
+
+[Meeting notes](https://docs.google.com/document/d/18w8zOBm_mbety0OqlPwxc7dvnfu641EgmrO4AdJef0U/) are publicly available.
+
+## Maintainers
+
+- Aaron Abbott (Google)
+- Leighton Chen (Microsoft)
+- Riccardo Magliocchetti (Elastic)
+
+See the [full contributor guide](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/CONTRIBUTING.md) on GitHub for more detail.

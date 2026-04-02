@@ -1,0 +1,63 @@
+---
+title: "Semantic Conventions"
+description: "Understand how OpenTelemetry Python manages the migration from old to stable semantic conventions."
+---
+
+OpenTelemetry semantic conventions define the standard attribute names used on spans and metrics (e.g. `http.method` vs `http.request.method`). As the spec matures, conventions are promoted from development → stable, which requires a migration period where both old and new names may be emitted.
+
+## Convention status
+
+Each instrumentation reports its semconv status in the [instrumentation table](/guides/web-frameworks):
+
+| Status | Meaning |
+|--------|---------|
+| `stable` | Emits only stable (new) attribute names |
+| `development` | Emits old/pre-stable attribute names; not yet migrated |
+| `migration` | Supports an opt-in migration mode — can emit old, new, or both |
+
+HTTP instrumentations (Flask, FastAPI, Django, requests, etc.) are the first to implement the migration plan.
+
+## Opting in to new HTTP conventions
+
+Control which attribute names are emitted via the `OTEL_SEMCONV_STABILITY_OPT_IN` environment variable:
+
+| Value | Behaviour |
+|-------|-----------|
+| _(unset)_ | Old conventions only (`http.method`, `http.url`, `http.status_code`, …) |
+| `http` | New stable conventions only (`http.request.method`, `url.full`, `http.response.status_code`, …) |
+| `http/dup` | Both old **and** new conventions emitted simultaneously — useful during a rollout |
+
+### Example
+
+```bash
+# Emit only new stable HTTP attributes
+OTEL_SEMCONV_STABILITY_OPT_IN=http opentelemetry-instrument python app.py
+
+# Emit both old and new during a gradual rollout
+OTEL_SEMCONV_STABILITY_OPT_IN=http/dup opentelemetry-instrument python app.py
+```
+
+## Old vs new HTTP attribute names
+
+| Old (default) | New (`http` opt-in) |
+|---|---|
+| `http.method` | `http.request.method` |
+| `http.url` | `url.full` |
+| `http.target` | `url.path` + `url.query` |
+| `http.status_code` | `http.response.status_code` |
+| `http.flavor` | `network.protocol.version` |
+| `http.host` | `server.address` |
+| `net.peer.name` | `server.address` (client) |
+| `net.peer.port` | `server.port` (client) |
+
+## Instrumentation semconv status table
+
+See the [instrumentation/README.md](https://github.com/open-telemetry/opentelemetry-python-contrib/blob/main/instrumentation/README.md) for a full per-package status table. At a glance:
+
+**Migration status** (support opt-in): aiohttp client/server, ASGI, Falcon, FastAPI, Flask, httpx, Pyramid, requests, SQLAlchemy, Tornado, urllib, urllib3, WSGI
+
+**Development status** (old conventions, no migration yet): Django, Elasticsearch, gRPC, Redis, Celery, Kafka, pymongo, Cassandra, and all GenAI instrumentations
+
+<Note>
+The `development` status here refers to the **semantic convention** maturity, not the instrumentation package itself. A package can be production-ready while its attribute names are still being finalised.
+</Note>

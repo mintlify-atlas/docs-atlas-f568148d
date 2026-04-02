@@ -1,0 +1,133 @@
+---
+title: "Pika (RabbitMQ)"
+description: "OpenTelemetry instrumentation for pika (RabbitMQ AMQP client)."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-pika
+pip install pika
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Instrument all channels globally** — every channel created from a `BlockingConnection` or
+`Connection` after this call is automatically instrumented:
+
+```python
+import pika
+from opentelemetry.instrumentation.pika import PikaInstrumentor
+
+PikaInstrumentor().instrument()
+
+connection = pika.BlockingConnection(pika.URLParameters("amqp://localhost"))
+channel = connection.channel()
+channel.queue_declare(queue="hello")
+channel.basic_publish(exchange="", routing_key="hello", body=b"Hello World!")
+```
+
+**Instrument a single channel** without affecting others:
+
+```python
+import pika
+from opentelemetry.instrumentation.pika import PikaInstrumentor
+
+connection = pika.BlockingConnection(pika.URLParameters("amqp://localhost"))
+channel = connection.channel()
+channel.queue_declare(queue="hello")
+
+pika_instrumentor = PikaInstrumentor()
+pika_instrumentor.instrument_channel(channel=channel)
+
+channel.basic_publish(exchange="", routing_key="hello", body=b"Hello World!")
+
+pika_instrumentor.uninstrument_channel(channel=channel)
+```
+
+**Instrument with a specific `TracerProvider`:**
+
+```python
+from opentelemetry.instrumentation.pika import PikaInstrumentor
+from opentelemetry.trace import get_tracer_provider
+
+channel = ...  # existing channel
+PikaInstrumentor.instrument_channel(channel, tracer_provider=get_tracer_provider())
+```
+
+### Consumer instrumentation
+
+Two consumer patterns are supported:
+
+- **`basic_consume` callback** — supported for both global (`PikaInstrumentor().instrument()`)
+  and per-channel (`instrument_channel()`) instrumentation.
+- **`consume` generator** — supported for global instrumentation only
+  (`PikaInstrumentor().instrument()`).
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="publish_hook" type="Callable[[Span, bytes, BasicProperties], None]">
+  Called when a message is published via `basic_publish`. Receives the active span, the
+  message body (`bytes`), and the message `BasicProperties`.
+</ParamField>
+
+<ParamField path="consume_hook" type="Callable[[Span, bytes, BasicProperties], None]">
+  Called when a message is consumed. Receives the active span, the message body (`bytes`),
+  and the message `BasicProperties`.
+</ParamField>
+
+### Example with hooks
+
+```python
+import pika
+from opentelemetry.instrumentation.pika import PikaInstrumentor
+from opentelemetry.trace import Span
+from pika import BasicProperties
+
+def publish_hook(span: Span, body: bytes, properties: BasicProperties):
+    span.set_attribute("messaging.payload_size", len(body))
+
+def consume_hook(span: Span, body: bytes, properties: BasicProperties):
+    if properties.message_id:
+        span.set_attribute("messaging.message_id", properties.message_id)
+
+PikaInstrumentor().instrument(
+    publish_hook=publish_hook,
+    consume_hook=consume_hook,
+)
+```
+
+## Spans produced
+
+One span is created per `basic_publish` call (producer) and per message delivery to a
+consumer callback.
+
+| Attribute | Description |
+|-----------|-------------|
+| `messaging.system` | Always `rabbitmq` |
+| `messaging.destination` | The exchange name |
+| `messaging.destination_kind` | Always `topic` |
+| `messaging.rabbitmq.routing_key` | The routing key |
+| `messaging.message_id` | The AMQP message ID (when set) |
+| `messaging.conversation_id` | The correlation ID (when set) |
+
+Context propagation is injected into AMQP message headers on publish and extracted on
+consume, linking producer and consumer spans across services.
+
+## Supported versions
+
+`pika >= 0.12.0`

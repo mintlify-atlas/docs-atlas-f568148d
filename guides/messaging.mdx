@@ -1,0 +1,166 @@
+---
+title: "Messaging & Task Queue Instrumentation"
+description: "Automatically instrument Celery, Kafka, RabbitMQ, and other messaging systems in Python with OpenTelemetry."
+---
+
+OpenTelemetry Python Contrib provides instrumentation for task queues and message brokers. These packages create producer and consumer spans that follow the [OpenTelemetry Messaging Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/messaging/), enabling distributed trace propagation across asynchronous boundaries.
+
+## Supported Systems
+
+<CardGroup cols={2}>
+  <Card title="Celery" href="/instrumentation/celery">
+    `opentelemetry-instrumentation-celery`
+    Supports: `celery >= 4.0, < 6.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="Kafka (kafka-python / confluent-kafka / aiokafka)" href="/instrumentation/kafka">
+    `opentelemetry-instrumentation-kafka-python`, `confluent-kafka`, `aiokafka`
+    kafka-python: `>= 2.0, < 3.0` | confluent-kafka: `>= 1.8.2, < 3.0.0` | aiokafka: `>= 0.8, < 1.0`
+  </Card>
+  <Card title="pika / aio-pika (RabbitMQ)" href="/instrumentation/pika">
+    `opentelemetry-instrumentation-pika`, `aio-pika`
+    pika: `>= 0.12.0` | aio_pika: `>= 7.2.0, < 10.0.0`
+  </Card>
+  <Card title="boto3 SQS" href="/instrumentation/botocore">
+    `opentelemetry-instrumentation-boto3sqs`
+    Supports: `boto3 ~= 1.0` | Metrics: No | Semconv: development
+  </Card>
+  <Card title="remoulade" href="/instrumentation/celery">
+    `opentelemetry-instrumentation-remoulade`
+    Supports: `remoulade >= 0.50` | Metrics: No | Semconv: development
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+<Tabs>
+  <Tab title="Celery">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-celery
+        ```
+      </Step>
+      <Step title="Instrument the worker process">
+        Celery workers run in forked subprocesses. OpenTelemetry tracing must be initialized inside the worker process after it forks, not in the parent. Use the `worker_process_init` signal for this:
+
+        ```python
+        from opentelemetry.instrumentation.celery import CeleryInstrumentor
+        from celery import Celery
+        from celery.signals import worker_process_init
+
+        @worker_process_init.connect(weak=False)
+        def init_celery_tracing(*args, **kwargs):
+            CeleryInstrumentor().instrument()
+
+        app = Celery("tasks", broker="amqp://localhost")
+
+        @app.task
+        def add(x, y):
+            return x + y
+        ```
+      </Step>
+      <Step title="Send a task">
+        Calling `.delay()` or `.apply_async()` on a task creates a **producer span**. The worker executing the task creates a **consumer span** that is linked to the producer via trace context propagated through the task headers.
+
+        ```python
+        # In your application code (producer side)
+        add.delay(42, 50)
+        ```
+      </Step>
+    </Steps>
+
+    <Warning>
+      `CeleryInstrumentor().instrument()` must be called **inside** the `worker_process_init` signal handler. Calling it at module level will not correctly instrument the forked worker subprocesses when using components like `BatchSpanProcessor` that rely on threading.
+    </Warning>
+  </Tab>
+  <Tab title="kafka-python">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-kafka-python
+        ```
+      </Step>
+      <Step title="Instrument producers and consumers">
+        ```python
+        from opentelemetry.instrumentation.kafka import KafkaInstrumentor
+
+        KafkaInstrumentor().instrument()
+
+        from kafka import KafkaProducer, KafkaConsumer
+
+        # Producer: creates a messaging span on each send
+        producer = KafkaProducer(bootstrap_servers="localhost:9092")
+        producer.send("my-topic", b"hello world")
+        producer.flush()
+
+        # Consumer: creates a messaging span on each record received
+        consumer = KafkaConsumer("my-topic", bootstrap_servers="localhost:9092")
+        for message in consumer:
+            print(message.value)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="confluent-kafka">
+    <Steps>
+      <Step title="Install the package">
+        ```bash
+        pip install opentelemetry-instrumentation-confluent-kafka
+        ```
+      </Step>
+      <Step title="Instrument the client">
+        ```python
+        from opentelemetry.instrumentation.confluent_kafka import ConfluentKafkaInstrumentor
+
+        instrumentor = ConfluentKafkaInstrumentor()
+        instrumentor.instrument()
+
+        from confluent_kafka import Producer, Consumer
+
+        # Producer
+        producer = Producer({"bootstrap.servers": "localhost:9092"})
+        producer.produce("my-topic", b"hello world")
+        producer.flush()
+
+        # Consumer
+        consumer = Consumer({
+            "bootstrap.servers": "localhost:9092",
+            "group.id": "my-group",
+            "auto.offset.reset": "earliest",
+        })
+        consumer.subscribe(["my-topic"])
+        msg = consumer.poll(1.0)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Messaging Span Semantics
+
+Messaging instrumentation follows the [OpenTelemetry Messaging Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/messaging/). Two span kinds are created for each message:
+
+| Span kind | When created | Description |
+|-----------|-------------|-------------|
+| **Producer** | `send` / `publish` / `apply_async` | Represents the act of publishing a message to a broker or queue |
+| **Consumer** (process) | `receive` / task execution | Represents processing of a received message |
+
+Trace context is propagated by injecting W3C TraceContext headers into message metadata (Kafka record headers, Celery task headers, AMQP message properties, etc.), so producer and consumer spans can be correlated across process boundaries.
+
+Common span attributes include:
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `messaging.system` | Messaging system identifier | `kafka`, `rabbitmq`, `aws_sqs`, `celery` |
+| `messaging.destination.name` | Topic, queue, or exchange name | `my-topic`, `tasks` |
+| `messaging.message.id` | Message identifier | `abc-123` |
+| `messaging.operation.name` | Operation performed | `publish`, `process` |
+
+## Reference Pages
+
+| System | Reference |
+|--------|-----------|
+| Celery | [/instrumentation/celery](/instrumentation/celery) |
+| Kafka (all variants) | [/instrumentation/kafka](/instrumentation/kafka) |
+| pika / aio-pika (RabbitMQ) | [/instrumentation/pika](/instrumentation/pika) |
+| botocore / boto3 SQS | [/instrumentation/botocore](/instrumentation/botocore) |

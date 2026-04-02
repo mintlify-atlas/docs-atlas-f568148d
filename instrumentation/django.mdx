@@ -1,0 +1,120 @@
+---
+title: "Django"
+description: "OpenTelemetry instrumentation for Django — traces HTTP requests and responses automatically."
+---
+
+Traces incoming HTTP requests in Django applications by injecting an OpenTelemetry middleware into Django's `MIDDLEWARE` setting.
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-django
+```
+
+<Note>
+  For ASGI-based Django deployments (Django Channels), also install the ASGI extra: `pip install opentelemetry-instrumentation-django[asgi]`.
+</Note>
+
+## Usage
+
+### Auto-instrumentation
+
+`opentelemetry-instrument` handles this automatically.
+
+```bash
+opentelemetry-instrument python manage.py runserver
+```
+
+### Manual instrumentation
+
+Call `DjangoInstrumentor().instrument()` before Django setup, typically in your `manage.py` or `wsgi.py` / `asgi.py` entry point.
+
+```python
+from opentelemetry.instrumentation.django import DjangoInstrumentor
+
+# Must be called before Django's setup() or before the first request is handled
+DjangoInstrumentor().instrument()
+```
+
+<Tip>
+  In `settings.py`-based projects, the safest place to call `.instrument()` is inside `manage.py` before `execute_from_command_line`, or at the top of `wsgi.py` / `asgi.py`.
+</Tip>
+
+## Configuration
+
+<ParamField path="request_hook" type="callable">
+  Called right after a span is created. Receives `(span, request)`. Only the bare `HttpRequest` is available at this stage — middleware-added attributes such as `request.user` are not yet set.
+</ParamField>
+
+<ParamField path="response_hook" type="callable">
+  Called right before the span is finished. Receives `(span, request, response)`. All Django middlewares have already run, so `request.user`, `request.site`, and any custom middleware attributes are available here.
+</ParamField>
+
+<ParamField path="excluded_urls" type="string">
+  Comma-delimited list of regexes matching URLs to exclude from tracing. Overrides `OTEL_PYTHON_DJANGO_EXCLUDED_URLS`.
+</ParamField>
+
+<ParamField path="is_sql_commentor_enabled" type="boolean" default="False">
+  Enables SQLCommenter, which appends trace context to outgoing SQL queries.
+</ParamField>
+
+<ParamField path="middleware_position" type="integer" default="0">
+  Position at which the OpenTelemetry middleware is inserted in `MIDDLEWARE`. Overrides `OTEL_PYTHON_DJANGO_MIDDLEWARE_POSITION`.
+</ParamField>
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  Optional tracer provider. Defaults to the globally configured provider.
+</ParamField>
+
+<ParamField path="meter_provider" type="MeterProvider">
+  Optional meter provider. Defaults to the globally configured provider.
+</ParamField>
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `OTEL_PYTHON_DJANGO_EXCLUDED_URLS` | Comma-delimited URL regex exclusion list. |
+| `OTEL_PYTHON_DJANGO_TRACED_REQUEST_ATTRS` | Comma-delimited list of `HttpRequest` attributes to attach as span attributes. |
+| `OTEL_PYTHON_DJANGO_MIDDLEWARE_POSITION` | Integer position for the OTel middleware in `MIDDLEWARE`. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_REQUEST` | Request header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SERVER_RESPONSE` | Response header names (or regexes) to capture as span attributes. |
+| `OTEL_INSTRUMENTATION_HTTP_CAPTURE_HEADERS_SANITIZE_FIELDS` | Header names whose values should be replaced with `[REDACTED]`. |
+
+### Hooks example
+
+```python
+from opentelemetry.instrumentation.django import DjangoInstrumentor
+
+def request_hook(span, request):
+    # Only bare HttpRequest available here — no request.user yet
+    if span and span.is_recording():
+        span.set_attribute("http.real_ip", request.META.get("REMOTE_ADDR", ""))
+
+def response_hook(span, request, response):
+    # Middlewares have run — request.user is available
+    if span and span.is_recording() and hasattr(request, "user"):
+        if request.user.is_authenticated:
+            span.set_attribute("enduser.id", str(request.user.pk))
+
+DjangoInstrumentor().instrument(
+    request_hook=request_hook,
+    response_hook=response_hook,
+)
+```
+
+## Spans produced
+
+A single server span is created per HTTP request with kind `SERVER`. The span name is the HTTP method and matched URL pattern, e.g. `GET /api/users/{id}`. Standard attributes include:
+
+- `http.method` / `http.request.method`
+- `http.route`
+- `http.status_code` / `http.response.status_code`
+- `http.scheme`
+- `http.host`
+- `http.target`
+- `http.user_agent`
+
+## Supported versions
+
+Requires `django >= 2.0`.

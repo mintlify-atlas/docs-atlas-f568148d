@@ -1,0 +1,120 @@
+---
+title: "Redis"
+description: "OpenTelemetry instrumentation for Redis."
+---
+
+## Installation
+
+```bash
+pip install opentelemetry-instrumentation-redis
+```
+
+## Usage
+
+### Auto-instrumentation
+
+Use the `opentelemetry-instrument` command to instrument your application without code changes:
+
+```bash
+opentelemetry-instrument python app.py
+```
+
+### Manual instrumentation
+
+**Instrument all clients globally:**
+
+```python
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+import redis
+
+RedisInstrumentor().instrument()
+
+client = redis.StrictRedis(host="localhost", port=6379)
+client.get("my-key")
+```
+
+**Async clients** are instrumented by the same call:
+
+```python
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+import redis.asyncio
+
+RedisInstrumentor().instrument()
+
+async def run():
+    client = redis.asyncio.Redis(host="localhost", port=6379)
+    await client.get("my-key")
+```
+
+**Instrument a single client** without affecting others:
+
+```python
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+import redis
+
+instrumented = redis.Redis()
+not_instrumented = redis.Redis()
+
+RedisInstrumentor.instrument_client(client=instrumented)
+
+instrumented.get("my-key")      # traced
+not_instrumented.get("my-key")  # not traced
+```
+
+<Note>
+  Calling `RedisInstrumentor().instrument()` patches the `Redis` and `RedisCluster` classes,
+  so every client instance created afterwards is traced. Use `instrument_client()` when you
+  need finer-grained control.
+</Note>
+
+## Configuration
+
+<ParamField path="tracer_provider" type="TracerProvider">
+  The `TracerProvider` to use. Defaults to the global provider.
+</ParamField>
+
+<ParamField path="request_hook" type="Callable[[Span, instance, args, kwargs], None]">
+  Called immediately after a span is created, before the command is sent.
+  `args` is a tuple of command arguments — for example, `client.set("k", "v", ex=5)` passes
+  `('SET', 'k', 'v', 'EX', 5)`.
+</ParamField>
+
+<ParamField path="response_hook" type="Callable[[Span, instance, response], None]">
+  Called after the command completes, before the span is finished.
+</ParamField>
+
+### Suppressing instrumentation
+
+Use the `suppress_instrumentation` context manager to skip tracing for specific operations:
+
+```python
+from opentelemetry.instrumentation.utils import suppress_instrumentation
+import redis
+
+client = redis.Redis()
+
+with suppress_instrumentation():
+    client.get("health-check-key")  # no span created
+```
+
+## Spans produced
+
+One span is created per Redis command (or per pipeline execution).
+
+| Attribute | Description |
+|-----------|-------------|
+| `db.system` | Always `redis` |
+| `db.statement` | The full Redis command string (e.g., `GET my-key`) |
+| `db.redis.args_length` | Number of arguments in the command |
+| `net.peer.name` | Redis server hostname |
+| `net.peer.port` | Redis server port |
+| `net.transport` | Always `ip_tcp` |
+
+For pipeline spans, `db.redis.pipeline_length` is set to the number of commands in the batch.
+
+## Supported versions
+
+`redis >= 2.6`
+
+Supports synchronous and asynchronous (`redis.asyncio`) clients, as well as `RedisCluster`
+and `ClusterPipeline`. Async cluster support requires `redis >= 4.3.2`.
